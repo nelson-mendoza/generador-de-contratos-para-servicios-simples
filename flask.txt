@@ -6,6 +6,7 @@ cd ContratoExpress
 cat > requirements.txt << 'EOF'
 Flask==2.3.3
 Werkzeug==2.3.7
+Flask-WTF==1.2.1
 EOF
 
 # 3. Crear rules.py (Base de datos y validaciones robustas)
@@ -120,8 +121,8 @@ def validate_contract(data):
         if data.get('payment_structure') == 'advance':
             advance = float(data.get('advance_amount', 0))
             remaining = float(data.get('remaining_amount', 0))
-            # Pequeño margen de error por decimales flotantes
-            if abs((advance + remaining) - total) > 0.5: 
+            # Pequeño margen de error por decimales flotantes (1 centavo)
+            if abs((advance + remaining) - total) > 0.01: 
                 errors.append("La suma del anticipo y resto no coincide con el total.")
     except ValueError:
         errors.append("Error en los montos: asegúrate de usar números válidos.")
@@ -195,14 +196,15 @@ EOF
 # 4. Crear app.py (Lógica principal con correcciones)
 cat > app.py << 'EOF'
 from flask import Flask, render_template, request, redirect, session, flash, url_for, send_from_directory
+from flask_wtf.csrf import CSRFProtect
 from rules import get_db, validate_contract, register_user, login_user
 from werkzeug.utils import secure_filename
 import os
 import time # Para nombres únicos de archivos
 
 app = Flask(__name__)
-# Clave secreta fija para desarrollo (evita cerrar sesión al reiniciar)
-app.secret_key = os.environ.get('SECRET_KEY', 'clave-secreta-estudiantil-cs50-2024') 
+# Clave secreta generada automáticamente para mayor seguridad
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24).hex()) 
 
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
@@ -210,7 +212,9 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # Crear carpeta uploads al iniciar (fuera del main para funcionar con flask run)
+# Inicializar protección CSRF
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+csrf = CSRFProtect(app)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -452,6 +456,7 @@ cat > templates/base.html << 'EOF'
             <hr>
             <a href="{{ url_for('logout') }}" class="logout">🚪 Cerrar Sesión</a>
             <form action="{{ url_for('delete_account') }}" method="POST" onsubmit="return confirm('¿Seguro? Se borrará todo.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="danger-btn">🗑️ Eliminar Cuenta</button>
             </form>
         </nav>
