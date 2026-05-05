@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nuevo Contrato de Servicio - ContratoUniversal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Barra de navegación con usuario -->
+        <nav class="navbar">
+            <div class="nav-brand">ContratoUniversal</div>
+            <div class="nav-user">
+                <span>Hola, {{ session.username }}</span>
+                <a href="{{ url_for('history') }}" class="nav-link">📁 Historial</a>
+                <a href="{{ url_for('logout') }}" class="nav-link btn-logout">🚪 Salir</a>
+            </div>
+        </nav>
+        
+        <!-- Encabezado -->
+        <header class="header">
+            <h1>📄 Nuevo Contrato de Servicio</h1>
+            <p class="subtitle">Genera contratos legales profesionales en segundos</p>
+        </header>
+
+        <!-- Formulario principal -->
+        <form id="contractForm" enctype="multipart/form-data">
+            
+            <!-- Sección A: Datos Básicos -->
+            <section class="form-section">
+                <h2>📋 Datos Básicos</h2>
+                
+                <div class="form-grid">
+                    <!-- Datos del Prestador -->
+                    <div class="form-group">
+                        <label for="provider_name">Nombre del Prestador *</label>
+                        <input type="text" id="provider_name" name="provider_name" required minlength="3" placeholder="Ej. Juan Pérez Servicios">
+                        <span class="error-msg"></span>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="provider_phone">Teléfono del Prestador</label>
+                        <input type="tel" id="provider_phone" name="provider_phone" placeholder="Ej. 5512345678">
+                    </div>
+                    
+                    <!-- Datos del Cliente -->
+                    <div class="form-group">
+                        <label for="client_name">Nombre del Cliente *</label>
+                        <input type="text" id="client_name" name="client_name" required minlength="3" placeholder="Ej. María González">
+                        <span class="error-msg"></span>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="client_phone">Teléfono del Cliente *</label>
+                        <input type="tel" id="client_phone" name="client_phone" required placeholder="Ej. 5598765432" minlength="10">
+                        <span class="error-msg"></span>
+                    </div>
+                    
+                    <!-- Upload de Logo -->
+                    <div class="form-group full-width">
+                        <label class="file-upload-label">
+                            <div class="file-upload-content">
+                                <span class="upload-icon">📷</span>
+                                <span class="upload-text">Subir Logo (Opcional)</span>
+                                <span class="upload-hint">PNG, JPG - Máx 2MB</span>
+                            </div>
+                            <input type="file" id="logo" name="logo" accept=".png,.jpg,.jpeg" class="file-input">
+                        </label>
+                        <div id="file-preview" class="file-preview"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sección B: Servicio -->
+            <section class="form-section">
+                <h2>🛠️ Servicio</h2>
+                
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="service_type">Tipo de Servicio</label>
+                        <select id="service_type" name="service_type">
+                            <option value="">Selecciona...</option>
+                            <option value="consultoria">Consultoría</option>
+                            <option value="desarrollo">Desarrollo Web/Software</option>
+                            <option value="diseno">Diseño Gráfico</option>
+                            <option value="marketing">Marketing Digital</option>
+                            <option value="mantenimiento">Mantenimiento</option>
+                            <option value="instalacion">Instalación</option>
+                            <option value="capacitacion">Capacitación</option>
+                            <option value="otro">Otro</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="service_title">Título del Servicio *</label>
+                        <input type="text" id="service_title" name="service_title" required placeholder="Ej. Desarrollo de Página Web">
+                    </div>
+                    
+                    <div class="form-group full-width">
+                        <label for="service_description">Descripción Detallada *</label>
+                        <textarea id="service_description" name="service_description" required rows="4" placeholder="Describe detalladamente el servicio a realizar..."></textarea>
+                        <span class="error-msg"></span>
+                    </div>
+                    
+                    <!-- Checkbox Materiales -->
+                    <div class="form-group full-width">
+                        <label class="checkbox-switch">
+                            <input type="checkbox" id="has_materials" name="has_materials">
+                            <span class="slider"></span>
+                            <span class="switch-label">¿Incluye Materiales?</span>
+                        </label>
+                        
+                        <!-- TextArea condicional para materiales -->
+                        <div id="materials-container" class="conditional-field hidden">
+                            <label for="materials_details">Detalle de Materiales Incluidos</label>
+                            <textarea id="materials_details" name="materials_details" rows="3" placeholder="Lista de materiales que incluye el servicio..."></textarea>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="pending_quote" name="pending_quote">
+                            <span>Cotización Pendiente</span>
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sección C: Pagos Inteligentes -->
+            <section class="form-section">
+                <h2>💰 Pagos Inteligentes</h2>
+                
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="payment_structure">Estructura de Pago</label>
+                        <select id="payment_structure" name="payment_structure">
+                            <option value="single">Pago Único</option>
+                            <option value="advance">Anticipo + Resto</option>
+                            <option value="partial">Pagos Parciales</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="payment_timing">Momento del Pago</label>
+                        <select id="payment_timing" name="payment_timing">
+                            <option value="before">Antes del Servicio</option>
+                            <option value="after">Después del Servicio</option>
+                            <option value="mixed">Mixto</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="total_amount">Monto Total ($) *</label>
+                        <input type="number" id="total_amount" name="total_amount" required min="0" step="0.01" placeholder="0.00">
+                        <span class="error-msg"></span>
+                    </div>
+                    
+                    <!-- Campos condicionales para anticipo -->
+                    <div id="advance-fields" class="hidden">
+                        <div class="form-group">
+                            <label for="advance_amount">Anticipo ($)</label>
+                            <input type="number" id="advance_amount" name="advance_amount" min="0" step="0.01" placeholder="0.00">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="remaining_amount">Resto ($)</label>
+                            <input type="number" id="remaining_amount" name="remaining_amount" min="0" step="0.01" placeholder="0.00">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="payment_method">Método de Pago</label>
+                        <select id="payment_method" name="payment_method">
+                            <option value="cash">Efectivo</option>
+                            <option value="transfer">Transferencia</option>
+                            <option value="card">Tarjeta</option>
+                            <option value="paypal">PayPal</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Campos bancarios condicionales -->
+                    <div id="bank-fields" class="hidden">
+                        <div class="form-group">
+                            <label for="bank_name">Banco</label>
+                            <input type="text" id="bank_name" name="bank_name" placeholder="Ej. BBVA">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="bank_clabe">CLABE</label>
+                            <input type="text" id="bank_clabe" name="bank_clabe" placeholder="18 dígitos" maxlength="18">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="payment_deadline">Fecha Límite de Pago *</label>
+                        <input type="date" id="payment_deadline" name="payment_deadline" required>
+                        <span class="error-msg"></span>
+                    </div>
+                    
+                    <!-- Penalizaciones (visuales) -->
+                    <div class="form-group full-width">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="apply_penalty" name="apply_penalty">
+                            <span>Aplicar Penalización por Mora</span>
+                        </label>
+                        <div id="penalty-fields" class="conditional-field hidden">
+                            <label for="penalty_rate">Tasa de Penalización (% diario)</label>
+                            <input type="number" id="penalty_rate" name="penalty_rate" min="0" max="100" step="0.1" value="5" placeholder="5">
+                        </div>
+                        <small class="field-hint" id="penalty-hint">Las penalizaciones solo aplican para pagos posteriores al servicio</small>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sección D: Opciones Avanzadas (Desplegable) -->
+            <section class="form-section">
+                <button type="button" id="advanced-toggle" class="accordion-btn">
+                    <span>[+] Opciones Avanzadas</span>
+                </button>
+                
+                <div id="advanced-options" class="accordion-content hidden">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="provider_rfc">RFC del Prestador</label>
+                            <input type="text" id="provider_rfc" name="provider_rfc" placeholder="Ej. PEJU850101ABC">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="client_rfc">RFC del Cliente</label>
+                            <input type="text" id="client_rfc" name="client_rfc" placeholder="Ej. GOMA900202XYZ">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="provider_address">Dirección del Prestador</label>
+                            <input type="text" id="provider_address" name="provider_address" placeholder="Calle, Número, Ciudad">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="client_address">Dirección del Cliente</label>
+                            <input type="text" id="client_address" name="client_address" placeholder="Calle, Número, Ciudad">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="client_email">Email del Cliente</label>
+                            <input type="email" id="client_email" name="client_email" placeholder="cliente@email.com">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="witness_name">Nombre del Testigo (Opcional)</label>
+                            <input type="text" id="witness_name" name="witness_name" placeholder="Nombre completo">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="include_confidentiality" name="include_confidentiality" checked>
+                                <span>Incluir Cláusula de Confidencialidad</span>
+                            </label>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="include_signatures" name="include_signatures" checked>
+                                <span>Incluir Firmas al Final</span>
+                            </label>
+                        </div>
+                        
+                        <!-- Nombres para firmas -->
+                        <div id="signature-names" class="full-width">
+                            <div class="form-group">
+                                <label for="provider_signature">Nombre para Firma del Prestador</label>
+                                <input type="text" id="provider_signature" name="provider_signature" placeholder="Nombre completo">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="client_signature">Nombre para Firma del Cliente</label>
+                                <input type="text" id="client_signature" name="client_signature" placeholder="Nombre completo">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="witness_signature">Nombre para Firma del Testigo</label>
+                                <input type="text" id="witness_signature" name="witness_signature" placeholder="Nombre completo">
+                            </div>
+                        </div>
+                        
+                        <!-- Garantía -->
+                        <div class="form-group">
+                            <label for="guarantee_days">Días de Garantía</label>
+                            <input type="number" id="guarantee_days" name="guarantee_days" value="30" min="0" max="365">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="guarantee_type">Tipo de Garantía</label>
+                            <input type="text" id="guarantee_type" name="guarantee_type" value="defectos de fabricación" placeholder="Ej. defectos de fabricación">
+                        </div>
+                        
+                        <div class="form-group full-width">
+                            <label for="guarantee_exclusions">Exclusiones de Garantía</label>
+                            <textarea id="guarantee_exclusions" name="guarantee_exclusions" rows="2" placeholder="Ej. daños por mal uso, accidentes...">daños por mal uso</textarea>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Botón de Acción -->
+            <div class="form-actions">
+                <button type="submit" id="generateBtn" class="btn-generate">
+                    <span class="btn-icon">📄</span>
+                    GENERAR Y DESCARGAR PDF
+                </button>
+            </div>
+            
+            <!-- Mensajes de error -->
+            <div id="form-errors" class="error-container hidden"></div>
+        </form>
+        
+        <!-- Footer -->
+        <footer class="footer">
+            <p>ContratoUniversal &copy; 2024 | Generador de Contratos Legales</p>
+            <a href="{{ url_for('history') }}" class="history-link">📂 Ver Historial de Contratos</a>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

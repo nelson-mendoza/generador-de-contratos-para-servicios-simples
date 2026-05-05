@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contrato #{{ contract.id }} - {{ contract.client_name }}</title>
+    <style>
+        /* Estilos específicos para impresión PDF */
+        @page {
+            size: A4;
+            margin: 2.5cm;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Times New Roman', Times, serif;
+            font-size: 12pt;
+            line-height: 1.6;
+            color: #000;
+            background: #fff;
+            text-align: justify;
+        }
+        
+        .contract-container {
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 2cm;
+        }
+        
+        /* Encabezado */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 2cm;
+            border-bottom: 3px solid #000;
+            padding-bottom: 1cm;
+        }
+        
+        .logo-section {
+            flex: 1;
+            text-align: left;
+        }
+        
+        .logo-section img {
+            max-height: 80px;
+            max-width: 200px;
+            object-fit: contain;
+        }
+        
+        .title-section {
+            flex: 2;
+            text-align: center;
+        }
+        
+        .title-section h1 {
+            font-size: 16pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-bottom: 0.5cm;
+        }
+        
+        .provider-section {
+            flex: 1;
+            text-align: right;
+            font-size: 10pt;
+        }
+        
+        .location-date {
+            text-align: center;
+            margin-bottom: 1cm;
+            font-style: italic;
+        }
+        
+        /* Partes del contrato */
+        .parties {
+            margin-bottom: 1.5cm;
+        }
+        
+        .parties p {
+            margin-bottom: 0.5cm;
+        }
+        
+        .party-details {
+            font-size: 10pt;
+            margin-left: 1cm;
+            margin-top: 0.5cm;
+        }
+        
+        /* Cláusulas */
+        .clause {
+            margin-bottom: 1cm;
+        }
+        
+        .clause-title {
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-bottom: 0.3cm;
+        }
+        
+        .clause-content {
+            text-indent: 1cm;
+        }
+        
+        /* Firmas */
+        .signatures {
+            margin-top: 2cm;
+            display: flex;
+            justify-content: space-between;
+            gap: 2cm;
+            page-break-inside: avoid;
+        }
+        
+        .signature-block {
+            flex: 1;
+            text-align: center;
+        }
+        
+        .signature-line {
+            border-top: 2px solid #000;
+            margin-bottom: 0.5cm;
+            padding-top: 0.5cm;
+        }
+        
+        .signature-name {
+            font-weight: bold;
+            font-size: 10pt;
+        }
+        
+        .signature-role {
+            font-size: 9pt;
+            font-style: italic;
+        }
+        
+        /* Botones de acción (no se imprimen) */
+        .action-buttons {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 1000;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .btn-print {
+            background: linear-gradient(135deg, #00adb5, #4caf50);
+            color: white;
+        }
+        
+        .btn-print:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 173, 182, 0.4);
+        }
+        
+        .btn-back {
+            background: #e94560;
+            color: white;
+        }
+        
+        .btn-delete {
+            background: #f44336;
+            color: white;
+        }
+        
+        /* Ocultar botones al imprimir */
+        @media print {
+            .action-buttons {
+                display: none !important;
+            }
+            
+            body {
+                background: white;
+            }
+            
+            .contract-container {
+                padding: 0;
+                margin: 0;
+            }
+        }
+        
+        /* Responsive para móvil */
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+            }
+            
+            .logo-section,
+            .provider-section {
+                text-align: center;
+            }
+            
+            .signatures {
+                flex-direction: column;
+            }
+            
+            .action-buttons {
+                position: static;
+                flex-direction: row;
+                justify-content: center;
+                margin: 20px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Botones de acción -->
+    <div class="action-buttons">
+        <button class="btn btn-print" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
+        <a href="/history" class="btn btn-back">📂 Historial</a>
+        <button class="btn btn-delete" onclick="deleteContract({{ contract.id }})">🗑️ Eliminar</button>
+    </div>
+    
+    <!-- Contenedor del contrato -->
+    <div class="contract-container">
+        <!-- Encabezado -->
+        <header class="header">
+            <div class="logo-section">
+                {% if contract.logo %}
+                <img src="{{ url_for('uploaded_file', filename=contract.logo) }}" alt="Logo">
+                {% endif %}
+            </div>
+            
+            <div class="title-section">
+                <h1>CONTRATO DE PRESTACIÓN DE SERVICIOS PROFESIONALES</h1>
+            </div>
+            
+            <div class="provider-section">
+                <strong>{{ contract.provider_name }}</strong><br>
+                Tel: {{ contract.provider_phone }}<br>
+                {% if contract.provider_rfc %}RFC: {{ contract.provider_rfc }}<br>{% endif %}
+            </div>
+        </header>
+        
+        <!-- Lugar y fecha -->
+        <p class="location-date">
+            En {{ contract.current_city }}, a {{ contract.current_date }}.
+        </p>
+        
+        <!-- Las Partes -->
+        <section class="parties">
+            <p>
+                El presente contrato se celebra entre <strong>{{ contract.provider_name | upper }}</strong>, en lo sucesivo denominado "EL PRESTADOR", 
+                y <strong>{{ contract.client_name | upper }}</strong>, en lo sucesivo denominado "EL CLIENTE".
+            </p>
+            
+            {% if contract.provider_rfc or contract.provider_address or contract.client_rfc or contract.client_address or contract.client_email %}
+            <div class="party-details">
+                <p><strong>DATOS DE EL PRESTADOR:</strong></p>
+                {% if contract.provider_rfc %}<p>RFC: {{ contract.provider_rfc }}</p>{% endif %}
+                {% if contract.provider_address %}<p>Dirección: {{ contract.provider_address }}</p>{% endif %}
+                
+                <p style="margin-top: 10px;"><strong>DATOS DE EL CLIENTE:</strong></p>
+                {% if contract.client_rfc %}<p>RFC: {{ contract.client_rfc }}</p>{% endif %}
+                {% if contract.client_address %}<p>Dirección: {{ contract.client_address }}</p>{% endif %}
+                {% if contract.client_email %}<p>Email: {{ contract.client_email }}</p>{% endif %}
+            </div>
+            {% endif %}
+        </section>
+        
+        <!-- Cláusulas -->
+        <section class="clauses">
+            <!-- PRIMERA: OBJETO -->
+            <div class="clause">
+                <p class="clause-title">PRIMERA. OBJETO DEL CONTRATO.</p>
+                <p class="clause-content">
+                    EL PRESTADOR se obliga a realizar el servicio denominado: <strong>{{ contract.service_title }}</strong>.
+                    Detalle del servicio: {{ contract.service_description }}.
+                </p>
+            </div>
+            
+            <!-- SEGUNDA: MATERIALES -->
+            <div class="clause">
+                <p class="clause-title">SEGUNDA. MATERIALES.</p>
+                <p class="clause-content">
+                    {% if contract.has_materials %}
+                    Materiales incluidos en el servicio: {{ contract.materials_details }}. 
+                    Los materiales no especificados serán por cuenta del cliente.
+                    {% else %}
+                    Todos los materiales necesarios para la realización del servicio serán proporcionados por EL CLIENTE.
+                    {% endif %}
+                </p>
+            </div>
+            
+            <!-- TERCERA: HONORARIOS -->
+            <div class="clause">
+                <p class="clause-title">TERCERA. HONORARIOS Y FORMA DE PAGO.</p>
+                <p class="clause-content">
+                    El costo total del servicio es de <strong>${{ "%.2f"|format(contract.total_amount) }} MN</strong>.
+                    
+                    {% if contract.payment_structure == 'advance' %}
+                    Forma de pago: Anticipo de ${{ "%.2f"|format(contract.advance_amount) }} al firmar el presente contrato, 
+                    y el resto de ${{ "%.2f"|format(contract.remaining_amount) }} al finalizar el servicio.
+                    {% elif contract.payment_structure == 'partial' %}
+                    Forma de pago: Pagos parciales según avance del servicio.
+                    {% else %}
+                    Forma de pago: Pago único.
+                    {% endif %}
+                    
+                    {% if contract.payment_method == 'transfer' %}
+                    El pago se realizará mediante transferencia bancaria a la siguiente cuenta:
+                    Banco: {{ contract.bank_name }}, CLABE: {{ contract.bank_clabe }}.
+                    {% elif contract.payment_method == 'cash' %}
+                    El pago se realizará en efectivo.
+                    {% elif contract.payment_method == 'card' %}
+                    El pago se realizará con tarjeta de crédito/débito.
+                    {% elif contract.payment_method == 'paypal' %}
+                    El pago se realizará mediante PayPal.
+                    {% endif %}
+                    
+                    Fecha límite de pago: {{ contract.payment_deadline }}.
+                </p>
+            </div>
+            
+            <!-- CUARTA: PLAZO -->
+            <div class="clause">
+                <p class="clause-title">CUARTA. PLAZO DE EJECUCIÓN.</p>
+                <p class="clause-content">
+                    EL PRESTADOR se compromete a entregar el servicio terminado a más tardar el día 
+                    <strong>{{ contract.payment_deadline }}</strong>.
+                </p>
+            </div>
+            
+            <!-- QUINTA: GARANTÍA -->
+            <div class="clause">
+                <p class="clause-title">QUINTA. GARANTÍA.</p>
+                <p class="clause-content">
+                    EL PRESTADOR otorga una garantía de {{ contract.guarantee_days }} días por {{ contract.guarantee_type }}.
+                    Esta garantía no cubre: {{ contract.guarantee_exclusions }}.
+                </p>
+            </div>
+            
+            <!-- SEXTA: CONFIDENCIALIDAD (condicional) -->
+            {% if contract.include_confidentiality %}
+            <div class="clause">
+                <p class="clause-title">SEXTA. CONFIDENCIALIDAD.</p>
+                <p class="clause-content">
+                    Ambas partes se comprometen a mantener la confidencialidad de la información intercambiada 
+                    durante la ejecución del presente contrato, no revelándola a terceros sin consentimiento 
+                    previo por escrito.
+                </p>
+            </div>
+            {% endif %}
+            
+            <!-- SÉPTIMA: INCUMPLIMIENTO (solo si pago es después) -->
+            {% if contract.payment_timing == 'after' %}
+            <div class="clause">
+                <p class="clause-title">{% if contract.include_confidentiality %}SÉPTIMA{% else %}SEXTA{% endif %}. INCUMPLIMIENTO Y PENALIZACIONES.</p>
+                <p class="clause-content">
+                    En caso de retraso en el pago por parte de EL CLIENTE, se aplicará una penalización del 
+                    {{ contract.penalty_rate or '5' }}% diario sobre el monto adeudado. 
+                    Si el pago no se realiza dentro de los {{ contract.payment_deadline }}, 
+                    EL PRESTADOR podrá cancelar el contrato y exigir el pago inmediato más las penalizaciones correspondientes.
+                </p>
+            </div>
+            {% endif %}
+        </section>
+        
+        <!-- Firmas (condicional) -->
+        {% if contract.include_signatures %}
+        <section class="signatures">
+            <div class="signature-block">
+                <div class="signature-line"></div>
+                <p class="signature-name">{{ contract.provider_signature }}</p>
+                <p class="signature-role">EL PRESTADOR</p>
+            </div>
+            
+            <div class="signature-block">
+                <div class="signature-line"></div>
+                <p class="signature-name">{{ contract.client_signature }}</p>
+                <p class="signature-role">EL CLIENTE</p>
+            </div>
+            
+            {% if contract.witness_name or contract.witness_signature %}
+            <div class="signature-block">
+                <div class="signature-line"></div>
+                <p class="signature-name">{{ contract.witness_signature or contract.witness_name }}</p>
+                <p class="signature-role">TESTIGO</p>
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+    </div>
+    
+    <script>
+        // Función para eliminar contrato
+        async function deleteContract(contractId) {
+            if (!confirm('¿Estás seguro de que deseas eliminar este contrato? Esta acción no se puede deshacer.')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/delete/${contractId}`, {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('Contrato eliminado exitosamente');
+                    window.location.href = '/history';
+                } else {
+                    alert('Error al eliminar: ' + (result.error || 'Error desconocido'));
+                }
+            } catch (error) {
+                alert('Error de conexión. Intente nuevamente.');
+            }
+        }
+        
+        // Auto-imprimir al cargar (opcional, comentado por defecto)
+        // window.onload = function() { window.print(); }
+    </script>
+</body>
+</html>
