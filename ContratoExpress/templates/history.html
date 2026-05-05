@@ -12,6 +12,7 @@
             <div class="actions">
                 <a href="{{ url_for('view_contract', contract_id=c.id) }}" class="btn-sm">Ver PDF</a>
                 <form action="{{ url_for('delete_contract', contract_id=c.id) }}" method="POST" onsubmit="return confirm('¿Eliminar?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn-sm danger">Borrar</button>
                 </form>
             </div>
