@@ -721,6 +721,7 @@ cat > templates/pdf_view.html << 'EOF'
 
 <!-- HOJA A4 -->
 <div class="a4-page">
+    <!-- ENCABEZADO -->
     <div class="pdf-header">
         <div class="header-left">
             {% if contract.provider_logo %}
@@ -728,8 +729,7 @@ cat > templates/pdf_view.html << 'EOF'
             {% endif %}
         </div>
         <div class="header-center">
-            <h1>CONTRATO DE PRESTACIÓN DE SERVICIOS</h1>
-            <!-- Ciudad dinámica desde la BD -->
+            <h1>CONTRATO DE PRESTACIÓN DE SERVICIOS PROFESIONALES</h1>
             <p>En {{ contract.city_location }}, a {{ contract.deadline }}.</p>
         </div>
         <div class="header-right">
@@ -739,37 +739,41 @@ cat > templates/pdf_view.html << 'EOF'
         </div>
     </div>
 
+    <!-- LAS PARTES -->
     <div class="pdf-section">
         <h3>LAS PARTES</h3>
-        <p>Entre <strong>{{ contract.provider_name }}</strong> ("PRESTADOR") y <strong>{{ contract.client_name }}</strong> ("CLIENTE").</p>
-        {% if contract.address_provider or contract.address_client %}
+        <p>El presente contrato se celebra entre <strong>{{ contract.provider_name }}</strong> (en adelante "EL PRESTADOR") y <strong>{{ contract.client_name }}</strong> (en adelante "EL CLIENTE"), quienes se reconocen la capacidad legal para contratar.</p>
+        {% if contract.address_provider or contract.address_client or contract.rfc_provider or contract.rfc_client %}
         <p class="small-text">
+            {% if contract.rfc_provider %}RFC Prestador: {{ contract.rfc_provider }}. {% endif %}
             {% if contract.address_provider %}Dom. Prestador: {{ contract.address_provider }}. {% endif %}
+            {% if contract.rfc_client %}RFC Cliente: {{ contract.rfc_client }}. {% endif %}
             {% if contract.address_client %}Dom. Cliente: {{ contract.address_client }}. {% endif %}
         </p>
         {% endif %}
     </div>
 
+    <!-- CLÁUSULAS -->
     <div class="pdf-section">
         <h3>PRIMERA. OBJETO</h3>
-        <p>El PRESTADOR realizará: <strong>{{ contract.service_title }}</strong>. Detalle: {{ contract.service_desc }}.</p>
+        <p>EL PRESTADOR se obliga a realizar: <strong>{{ contract.service_title }}</strong>. Detalle: {{ contract.service_desc }}.</p>
     </div>
 
     <div class="pdf-section">
         <h3>SEGUNDA. MATERIALES</h3>
         {% if contract.has_materials %}
-            <p>Incluye: {{ contract.materials_details }}. El resto corre por el CLIENTE.</p>
+            <p>Los materiales incluidos son: {{ contract.materials_details }}. Los restantes corren por cuenta de EL CLIENTE.</p>
         {% else %}
-            <p>Los materiales son proporcionados por el CLIENTE.</p>
+            <p>Los materiales e insumos necesarios serán proporcionados por EL CLIENTE.</p>
         {% endif %}
     </div>
 
     <div class="pdf-section">
-        <h3>TERCERA. HONORARIOS</h3>
-        <p>Costo total: <strong>${{ "%.2f"|format(contract.total_amount) }}</strong>.</p>
+        <h3>TERCERA. HONORARIOS Y FORMA DE PAGO</h3>
+        <p>El costo total es de <strong>${{ "%.2f"|format(contract.total_amount) }}</strong>.</p>
         
         {% if contract.payment_structure == 'advance' %}
-            <p>Anticipo: ${{ "%.2f"|format(contract.advance_amount) }} al firmar. Resto: ${{ "%.2f"|format(contract.remaining_amount) }} al finalizar.</p>
+            <p>Se paga un anticipo de ${{ "%.2f"|format(contract.advance_amount) }} al firmar y el resto (${{ "%.2f"|format(contract.remaining_amount) }}) al finalizar.</p>
         {% endif %}
 
         {% if contract.payment_method == 'transfer' %}
@@ -784,29 +788,30 @@ cat > templates/pdf_view.html << 'EOF'
     </div>
 
     <div class="pdf-section">
-        <h3>CUARTA. PLAZO</h3>
-        <p>Entrega máxima: <strong>{{ contract.deadline }}</strong>.</p>
+        <h3>CUARTA. PLAZO DE ENTREGA</h3>
+        <p>El servicio se entregará a más tardar el <strong>{{ contract.deadline }}</strong>.</p>
     </div>
 
     <div class="pdf-section">
         <h3>QUINTA. GARANTÍA</h3>
-        <p>Garantía de 15 días por defectos de ejecución. No cubre mal uso.</p>
+        <p>El servicio cuenta con una garantía por defectos de ejecución. No cubre mal uso.</p>
     </div>
 
     {% if contract.include_confidentiality %}
     <div class="pdf-section">
         <h3>SEXTA. CONFIDENCIALIDAD</h3>
-        <p>Reserva estricta sobre la información compartida.</p>
+        <p>Ambas partes guardan reserva sobre la información compartida.</p>
     </div>
     {% endif %}
 
     {% if contract.payment_timing == 'after' %}
     <div class="pdf-section">
         <h3>SÉPTIMA. INCUMPLIMIENTO</h3>
-        <p>Retraso genera penalización del {{ contract.penalty_rate }}% diario. Cancelación si no se paga en fecha límite.</p>
+        <p>El retraso en el pago generará una penalización del {{ contract.penalty_rate }}% diario. Si no se paga en fecha límite, el contrato se cancela.</p>
     </div>
     {% endif %}
 
+    <!-- PIE DE PÁGINA (FIRMAS) -->
     {% if contract.include_signatures %}
     <div class="signatures-section">
         <div class="sig-box">
