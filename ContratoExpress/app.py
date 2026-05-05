@@ -1,9 +1,9 @@
 from flask import Flask, render_template, request, redirect, session, flash, url_for, send_from_directory
-from flask_wtf.csrf import CSRFProtect
 from rules import get_db, validate_contract, register_user, login_user
 from werkzeug.utils import secure_filename
 import os
 import time # Para nombres únicos de archivos
+import secrets
 
 app = Flask(__name__)
 # Clave secreta generada automáticamente para mayor seguridad
@@ -14,10 +14,23 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Crear carpeta uploads al iniciar (fuera del main para funcionar con flask run)
-# Inicializar protección CSRF
+# Crear carpeta uploads al iniciar
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-csrf = CSRFProtect(app)
+
+# Generar token CSRF manual
+def generate_csrf_token():
+    if '_csrf_token' not in session:
+        session['_csrf_token'] = secrets.token_hex(32)
+    return session['_csrf_token']
+
+def validate_csrf_token():
+    token = request.form.get('csrf_token')
+    if not token or token != session.get('_csrf_token'):
+        return False
+    return True
+
+# Hacer disponible la función en los templates
+app.jinja_env.globals.update(csrf_token=generate_csrf_token)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -33,6 +46,11 @@ def index():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
+        # Validar CSRF token manualmente
+        if not validate_csrf_token():
+            flash("Token CSRF inválido.", "error")
+            return redirect(url_for('register'))
+        
         username = request.form.get('username')
         password = request.form.get('password')
         confirm = request.form.get('confirm')
@@ -59,6 +77,11 @@ def register():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
+        # Validar CSRF token manualmente
+        if not validate_csrf_token():
+            flash("Token CSRF inválido.", "error")
+            return redirect(url_for('login'))
+        
         username = request.form.get('username')
         password = request.form.get('password')
         
@@ -83,6 +106,11 @@ def delete_account():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
+    # Validar CSRF token manualmente
+    if not validate_csrf_token():
+        flash("Token CSRF inválido.", "error")
+        return redirect(url_for('index'))
+    
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM contracts WHERE user_id = ?", (session['user_id'],))
@@ -101,6 +129,11 @@ def new_contract():
         return redirect(url_for('login'))
         
     if request.method == 'POST':
+        # Validar CSRF token manualmente
+        if not validate_csrf_token():
+            flash("Token CSRF inválido.", "error")
+            return redirect(url_for('new_contract'))
+        
         errors = validate_contract(request.form)
         
         # Manejo de Logo con nombre único (timestamp) para evitar sobrescribir
@@ -211,6 +244,11 @@ def view_contract(contract_id):
 def delete_contract(contract_id):
     if 'user_id' not in session:
         return redirect(url_for('login'))
+    
+    # Validar CSRF token manualmente
+    if not validate_csrf_token():
+        flash("Token CSRF inválido.", "error")
+        return redirect(url_for('history'))
         
     conn = get_db()
     contract = conn.execute("SELECT provider_logo FROM contracts WHERE id = ? AND user_id = ?", 
