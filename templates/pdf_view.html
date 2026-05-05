@@ -4,7 +4,7 @@
     <a href="{{ url_for('history') }}" class="btn-secondary">← Volver</a>
     <button onclick="window.print()" class="btn-primary"> Guardar como PDF</button>
     <form action="{{ url_for('delete_contract', contract_id=contract.id) }}" method="POST" style="display:inline;" onsubmit="return confirm('¿Borrar?');">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn-danger"> Borrar</button>
     </form>
     <p class="hint"> Tip: En impresión, selecciona "Guardar como PDF". Los márgenes están ajustados automáticamente.</p>
@@ -47,7 +47,7 @@
     <!-- CLÁUSULAS -->
     <div class="pdf-section">
         <h3>PRIMERA. OBJETO</h3>
-        <p>EL PRESTADOR se obliga a realizar: <strong>{{ contract.service_title }}</strong>. Detalle: {{ contract.service_desc }}.</p>
+        <p>EL PRESTADOR se obliga a realizar: <strong>{{ contract.service_title }}</strong> ({{ contract.service_type }}). Detalle: {{ contract.service_desc }}.</p>
     </div>
 
     <div class="pdf-section">
@@ -61,20 +61,28 @@
 
     <div class="pdf-section">
         <h3>TERCERA. HONORARIOS Y FORMA DE PAGO</h3>
-        <p>El costo total es de <strong>${{ "%.2f"|format(contract.total_amount) }}</strong>.</p>
-        
-        {% if contract.payment_structure == 'advance' %}
-            <p>Se paga un anticipo de ${{ "%.2f"|format(contract.advance_amount) }} al firmar y el resto (${{ "%.2f"|format(contract.remaining_amount) }}) al finalizar.</p>
-        {% endif %}
-
-        {% if contract.payment_method == 'transfer' %}
-            <p>Pago vía Transferencia a: {{ contract.bank_details }}.</p>
-        {% elif contract.payment_method == 'crypto' %}
-            <p>Pago vía Cripto a: {{ contract.crypto_wallet }}.</p>
-        {% elif contract.payment_method == 'other' %}
-            <p>Pago vía: {{ contract.other_method }}.</p>
+        {% if contract.is_quote_pending %}
+            <p><strong>COTIZACIÓN PENDIENTE:</strong> El monto final será determinado tras evaluación.</p>
         {% else %}
-            <p>Pago en Efectivo.</p>
+            <p>El costo total es de <strong>${{ "%.2f"|format(contract.total_amount) }}</strong>.</p>
+            
+            {% if contract.payment_structure == 'advance' %}
+                <p>Se paga un anticipo de ${{ "%.2f"|format(contract.advance_amount) }} al firmar y el resto (${{ "%.2f"|format(contract.remaining_amount) }}) al finalizar.</p>
+            {% endif %}
+
+            {% if contract.payment_method == 'transfer' %}
+                <p>Pago vía Transferencia a: {{ contract.bank_details }}.</p>
+            {% elif contract.payment_method == 'crypto' %}
+                <p>Pago vía Cripto a: {{ contract.crypto_wallet }}.</p>
+            {% elif contract.payment_method == 'other' %}
+                <p>Pago vía: {{ contract.other_method }}.</p>
+            {% else %}
+                <p>Pago en Efectivo.</p>
+            {% endif %}
+            
+            {% if contract.email_client %}
+            <p class="small-text">Notificaciones al correo: {{ contract.email_client }}</p>
+            {% endif %}
         {% endif %}
     </div>
 

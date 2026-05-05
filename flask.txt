@@ -300,6 +300,18 @@ def new_contract():
     if request.method == 'POST':
         errors = validate_contract(request.form)
         
+        # Validaciones críticas: Prestador y Cliente no pueden ser iguales
+        nombre_prestador = request.form.get('provider_name', '').strip()
+        nombre_cliente = request.form.get('client_name', '').strip()
+        telefono_prestador = request.form.get('provider_phone', '').strip()
+        telefono_cliente = request.form.get('client_phone', '').strip()
+        
+        if nombre_prestador and nombre_cliente and nombre_prestador.lower() == nombre_cliente.lower():
+            errors.append("El nombre del Prestador y del Cliente no pueden ser iguales.")
+        
+        if telefono_prestador and telefono_cliente and telefono_prestador == telefono_cliente:
+            errors.append("El número de teléfono del Prestador y del Cliente no pueden ser iguales.")
+        
         # Manejo de Logo con nombre único (timestamp) para evitar sobrescribir
         logo_filename = None
         if 'logo' in request.files:
@@ -408,7 +420,15 @@ def view_contract(contract_id):
 def delete_contract(contract_id):
     if 'user_id' not in session:
         return redirect(url_for('login'))
-        
+    
+    # Verificar CSRF token manualmente si es necesario
+    from flask_wtf.csrf import validate_csrf
+    try:
+        validate_csrf(request.form.get('csrf_token'))
+    except Exception:
+        flash("Error de seguridad CSRF.", "error")
+        return redirect(url_for('history'))
+    
     conn = get_db()
     contract = conn.execute("SELECT provider_logo FROM contracts WHERE id = ? AND user_id = ?", 
                             (contract_id, session['user_id'])).fetchone()
@@ -599,18 +619,19 @@ cat > templates/form.html << 'EOF'
             <textarea name="service_desc" rows="3" placeholder="Describe exactamente qué harás..." required>{{ form_data.service_desc if form_data else '' }}</textarea>
 
             <div class="checkbox-group">
-                <label class="switch-label">
-                    <input type="checkbox" name="has_materials" id="hasMaterials" onchange="toggleMaterials()" {{ 'checked' if form_data and form_data.has_materials else '' }}>
-                    ¿Incluye Materiales?
-                </label>
+                <div class="form-row-inline">
+                    <label class="checkbox-label-inline">
+                        <input type="checkbox" name="has_materials" id="hasMaterials" onchange="toggleMaterials()" {{ 'checked' if form_data and form_data.has_materials else '' }}>
+                        ¿Incluye Materiales?
+                    </label>
+                    <label class="checkbox-label-inline">
+                        <input type="checkbox" name="is_quote_pending" {{ 'checked' if form_data and form_data.is_quote_pending else '' }}> Cotización Pendiente
+                    </label>
+                </div>
                 <div id="materialsOptions" class="{{ 'hidden' if not form_data or not form_data.has_materials else '' }}">
                     <textarea name="materials_details" placeholder="Lista de materiales incluidos...">{{ form_data.materials_details if form_data else '' }}</textarea>
                 </div>
             </div>
-
-            <label class="checkbox-label">
-                <input type="checkbox" name="is_quote_pending" {{ 'checked' if form_data and form_data.is_quote_pending else '' }}> Cotización Pendiente
-            </label>
         </fieldset>
 
         <!-- SECCIÓN 3: PAGOS -->
@@ -717,6 +738,7 @@ cat > templates/pdf_view.html << 'EOF'
     <a href="{{ url_for('history') }}" class="btn-secondary">← Volver</a>
     <button onclick="window.print()" class="btn-primary"> Guardar como PDF</button>
     <form action="{{ url_for('delete_contract', contract_id=contract.id) }}" method="POST" style="display:inline;" onsubmit="return confirm('¿Borrar?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn-danger"> Borrar</button>
     </form>
     <p class="hint"> Tip: En impresión, selecciona "Guardar como PDF". Los márgenes están ajustados automáticamente.</p>
@@ -759,7 +781,7 @@ cat > templates/pdf_view.html << 'EOF'
     <!-- CLÁUSULAS -->
     <div class="pdf-section">
         <h3>PRIMERA. OBJETO</h3>
-        <p>EL PRESTADOR se obliga a realizar: <strong>{{ contract.service_title }}</strong>. Detalle: {{ contract.service_desc }}.</p>
+        <p>EL PRESTADOR se obliga a realizar: <strong>{{ contract.service_title }}</strong> ({{ contract.service_type }}). Detalle: {{ contract.service_desc }}.</p>
     </div>
 
     <div class="pdf-section">
@@ -773,20 +795,28 @@ cat > templates/pdf_view.html << 'EOF'
 
     <div class="pdf-section">
         <h3>TERCERA. HONORARIOS Y FORMA DE PAGO</h3>
-        <p>El costo total es de <strong>${{ "%.2f"|format(contract.total_amount) }}</strong>.</p>
-        
-        {% if contract.payment_structure == 'advance' %}
-            <p>Se paga un anticipo de ${{ "%.2f"|format(contract.advance_amount) }} al firmar y el resto (${{ "%.2f"|format(contract.remaining_amount) }}) al finalizar.</p>
-        {% endif %}
-
-        {% if contract.payment_method == 'transfer' %}
-            <p>Pago vía Transferencia a: {{ contract.bank_details }}.</p>
-        {% elif contract.payment_method == 'crypto' %}
-            <p>Pago vía Cripto a: {{ contract.crypto_wallet }}.</p>
-        {% elif contract.payment_method == 'other' %}
-            <p>Pago vía: {{ contract.other_method }}.</p>
+        {% if contract.is_quote_pending %}
+            <p><strong>COTIZACIÓN PENDIENTE:</strong> El monto final será determinado tras evaluación.</p>
         {% else %}
-            <p>Pago en Efectivo.</p>
+            <p>El costo total es de <strong>${{ "%.2f"|format(contract.total_amount) }}</strong>.</p>
+            
+            {% if contract.payment_structure == 'advance' %}
+                <p>Se paga un anticipo de ${{ "%.2f"|format(contract.advance_amount) }} al firmar y el resto (${{ "%.2f"|format(contract.remaining_amount) }}) al finalizar.</p>
+            {% endif %}
+
+            {% if contract.payment_method == 'transfer' %}
+                <p>Pago vía Transferencia a: {{ contract.bank_details }}.</p>
+            {% elif contract.payment_method == 'crypto' %}
+                <p>Pago vía Cripto a: {{ contract.crypto_wallet }}.</p>
+            {% elif contract.payment_method == 'other' %}
+                <p>Pago vía: {{ contract.other_method }}.</p>
+            {% else %}
+                <p>Pago en Efectivo.</p>
+            {% endif %}
+            
+            {% if contract.email_client %}
+            <p class="small-text">Notificaciones al correo: {{ contract.email_client }}</p>
+            {% endif %}
         {% endif %}
     </div>
 
@@ -856,6 +886,7 @@ cat > templates/history.html << 'EOF'
             <div class="actions">
                 <a href="{{ url_for('view_contract', contract_id=c.id) }}" class="btn-sm">Ver PDF</a>
                 <form action="{{ url_for('delete_contract', contract_id=c.id) }}" method="POST" onsubmit="return confirm('¿Eliminar?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn-sm danger">Borrar</button>
                 </form>
             </div>
@@ -916,6 +947,13 @@ input:focus, textarea:focus { border-color: var(--primary); outline: none; }
 .btn-toggle { background: #eee; border: none; padding: 10px; width: 100%; text-align: left; cursor: pointer; font-weight: bold; border-radius: 5px; margin-bottom: 10px; }
 .btn-generate { background: linear-gradient(45deg, var(--success), var(--primary)); color: white; border: none; padding: 15px; width: 100%; font-size: 1.1rem; font-weight: bold; border-radius: 8px; cursor: pointer; margin-top: 20px; box-shadow: 0 4px 15px rgba(67, 97, 238, 0.3); transition: transform 0.2s; }
 .btn-generate:hover { transform: translateY(-2px); }
+
+/* Checkbox alignment fix */
+.checkbox-label-inline { display: flex; align-items: center; gap: 8px; margin: 8px 0; cursor: pointer; }
+.checkbox-label-inline input[type="checkbox"] { width: auto; margin: 0; }
+.checkbox-group { margin-bottom: 15px; }
+.form-row-inline { display: flex; gap: 20px; flex-wrap: wrap; align-items: center; }
+.form-row-inline .checkbox-label-inline { margin: 0; }
 
 /* Alerts */
 .flash-messages { margin-bottom: 20px; }

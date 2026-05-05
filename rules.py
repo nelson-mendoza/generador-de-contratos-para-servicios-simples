@@ -94,24 +94,9 @@ def validate_contract(data):
         errors.append("Teléfono del prestador inválido (mínimo 7 dígitos).")
     if not phone_c.isdigit() or len(phone_c) < 7:
         errors.append("Teléfono del cliente inválido (mínimo 7 dígitos).")
-    
-    # Validar que teléfonos no sean iguales
-    if phone_p == phone_c:
-        errors.append("El teléfono del prestador y del cliente no pueden ser iguales.")
         
     if len(data.get('service_desc', '')) < 5:
         errors.append("Descripción muy corta.")
-    
-    # Validar que nombres no sean iguales (a menos que haya RFCs diferentes que los distingan)
-    name_provider = data.get('provider_name', '').strip().lower()
-    name_client = data.get('client_name', '').strip().lower()
-    rfc_provider = data.get('rfc_provider', '').strip().upper()
-    rfc_client = data.get('rfc_client', '').strip().upper()
-    
-    if name_provider == name_client:
-        # Si los nombres son iguales, verificar si hay RFCs diferentes que los distingan
-        if not rfc_provider or not rfc_client or rfc_provider == rfc_client:
-            errors.append("El nombre del prestador y del cliente no pueden ser iguales a menos que tengan RFCs diferentes.")
         
     # Validación numérica segura (Try/Except para evitar crash 500)
     try:
