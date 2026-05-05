@@ -100,13 +100,13 @@ def validate_contract(data):
     if len(data.get('city_location', '')) < 3:
         errors.append("Falta la ciudad de expedición.")
         
-    # Teléfonos (solo dígitos)
-    phone_p = data.get('provider_phone', '').replace(" ", "")
-    phone_c = data.get('client_phone', '').replace(" ", "")
-    if not phone_p.isdigit() or len(phone_p) < 10:
-        errors.append("Teléfono del prestador inválido.")
-    if not phone_c.isdigit() or len(phone_c) < 10:
-        errors.append("Teléfono del cliente inválido.")
+    # Teléfonos (solo dígitos, mínimo 7 para aceptar internacionales)
+    phone_p = data.get('provider_phone', '').replace(" ", "").replace("-", "")
+    phone_c = data.get('client_phone', '').replace(" ", "").replace("-", "")
+    if not phone_p.isdigit() or len(phone_p) < 7:
+        errors.append("Teléfono del prestador inválido (mínimo 7 dígitos).")
+    if not phone_c.isdigit() or len(phone_c) < 7:
+        errors.append("Teléfono del cliente inválido (mínimo 7 dígitos).")
         
     if len(data.get('service_desc', '')) < 5:
         errors.append("Descripción muy corta.")
@@ -146,8 +146,13 @@ def validate_contract(data):
         errors.append("Faltan datos bancarios.")
 
     if data.get('include_signatures') == 'on':
-        if not data.get('sig_provider_name') or not data.get('sig_client_name'):
-            errors.append("Faltan nombres para las firmas.")
+        # Validar nombres de firmas siempre que se marque la opción, sin importar si están en avanzadas
+        sig_provider = data.get('sig_provider_name', '').strip()
+        sig_client = data.get('sig_client_name', '').strip()
+        if not sig_provider:
+            errors.append("Falta el nombre para la firma del prestador.")
+        if not sig_client:
+            errors.append("Falta el nombre para la firma del cliente.")
 
     return errors
 
@@ -325,7 +330,7 @@ def new_contract():
                     rfc_provider, rfc_client, address_provider, address_client, email_client,
                     witness_name, include_confidentiality, include_signatures,
                     sig_provider_name, sig_client_name, sig_witness_name
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 session['user_id'],
                 request.form.get('city_location'), # Nueva ciudad
@@ -512,18 +517,12 @@ EOF
 cat > templates/dashboard.html << 'EOF'
 {% extends "base.html" %}
 {% block content %}
-<div class="welcome-box">
+<div class="simple-welcome">
     <h1>¡Hola, {{ session.username }}! 👋</h1>
     <p>Bienvenido a <strong>ContratoExpress</strong>.</p>
-    <div class="actions-grid">
-        <a href="{{ url_for('new_contract') }}" class="card-action">
-            <h3>✍️ Crear Nuevo</h3>
-            <p>Genera un contrato legal en segundos.</p>
-        </a>
-        <a href="{{ url_for('history') }}" class="card-action">
-            <h3>📂 Ver Historial</h3>
-            <p>Revisa o elimina contratos anteriores.</p>
-        </a>
+    <div class="quick-links">
+        <a href="{{ url_for('new_contract') }}" class="quick-link">✍️ Crear Nuevo Contrato</a>
+        <a href="{{ url_for('history') }}" class="quick-link">📂 Ver Historial</a>
     </div>
 </div>
 {% endblock %}
@@ -547,12 +546,12 @@ cat > templates/form.html << 'EOF'
                 <div>
                     <label>Prestador (Tú)</label>
                     <input type="text" name="provider_name" value="{{ form_data.provider_name if form_data else '' }}" placeholder="Nombre completo" required>
-                    <input type="text" name="provider_phone" value="{{ form_data.provider_phone if form_data else '' }}" placeholder="Teléfono (10 dígitos)" pattern="[0-9]{10}" required>
+                    <input type="text" name="provider_phone" value="{{ form_data.provider_phone if form_data else '' }}" placeholder="Teléfono (mínimo 7 dígitos)" pattern="[0-9]{7,}" required>
                 </div>
                 <div>
                     <label>Cliente</label>
                     <input type="text" name="client_name" value="{{ form_data.client_name if form_data else '' }}" placeholder="Nombre completo" required>
-                    <input type="text" name="client_phone" value="{{ form_data.client_phone if form_data else '' }}" placeholder="Teléfono (10 dígitos)" pattern="[0-9]{10}" required>
+                    <input type="text" name="client_phone" value="{{ form_data.client_phone if form_data else '' }}" placeholder="Teléfono (mínimo 7 dígitos)" pattern="[0-9]{7,}" required>
                 </div>
             </div>
             
@@ -687,11 +686,11 @@ cat > templates/form.html << 'EOF'
                 <input type="checkbox" name="include_confidentiality" {{ 'checked' if form_data and form_data.include_confidentiality else '' }}> Incluir Confidencialidad
             </label>
             <label class="checkbox-label">
-                <input type="checkbox" name="include_signatures" {{ 'checked' if form_data is none or (form_data and form_data.include_signatures) else '' }}> Imprimir Espacio para Firmas
+                <input type="checkbox" name="include_signatures" id="includeSignatures" onchange="toggleSignatureNames()" {{ 'checked' if form_data is none or (form_data and form_data.include_signatures) else '' }}> Imprimir Espacio para Firmas
             </label>
-            <div id="signatureNames" class="grid-3">
-                <input type="text" name="sig_provider_name" value="{{ form_data.sig_provider_name if form_data else '' }}" placeholder="Nombre Impreso (Prestador)">
-                <input type="text" name="sig_client_name" value="{{ form_data.sig_client_name if form_data else '' }}" placeholder="Nombre Impreso (Cliente)">
+            <div id="signatureNames" class="grid-3 {{ 'hidden' if not form_data or not form_data.include_signatures else '' }}">
+                <input type="text" name="sig_provider_name" value="{{ form_data.sig_provider_name if form_data else '' }}" placeholder="Nombre Impreso (Prestador)" {{ 'required' if form_data and form_data.include_signatures else '' }}>
+                <input type="text" name="sig_client_name" value="{{ form_data.sig_client_name if form_data else '' }}" placeholder="Nombre Impreso (Cliente)" {{ 'required' if form_data and form_data.include_signatures else '' }}>
                 <input type="text" name="sig_witness_name" value="{{ form_data.sig_witness_name if form_data else '' }}" placeholder="Nombre Impreso (Testigo)">
             </div>
         </div>
@@ -875,8 +874,8 @@ body { background-color: var(--bg); color: #333; display: flex; min-height: 100v
 /* Sidebar */
 .sidebar { width: 250px; background: var(--dark); color: white; padding: 20px; display: flex; flex-direction: column; position: fixed; height: 100%; }
 .sidebar h2 { margin-bottom: 30px; font-size: 1.2rem; text-align: center; border-bottom: 1px solid #444; padding-bottom: 10px; }
-.sidebar nav a { display: block; color: #ccc; text-decoration: none; padding: 10px; margin-bottom: 5px; border-radius: 5px; transition: 0.3s; }
-.sidebar nav a:hover { background: rgba(255,255,255,0.1); color: white; }
+.sidebar nav a { display: block; color: white; text-decoration: none; padding: 10px; margin-bottom: 5px; border-radius: 5px; transition: 0.3s; }
+.sidebar nav a:hover { background: rgba(255,255,255,0.1); }
 .danger-btn { background: none; border: 1px solid var(--danger); color: var(--danger); width: 100%; padding: 10px; margin-top: 20px; cursor: pointer; border-radius: 5px; }
 .danger-btn:hover { background: var(--danger); color: white; }
 
@@ -918,6 +917,14 @@ input:focus, textarea:focus { border-color: var(--primary); outline: none; }
 .btn-sm { padding: 5px 10px; text-decoration: none; border-radius: 4px; font-size: 0.9rem; border: none; cursor: pointer; }
 .btn-sm { background: var(--primary); color: white; }
 .btn-sm.danger { background: var(--danger); }
+
+/* Dashboard Simple - Sin tarjetas ni stickers */
+.simple-welcome { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); max-width: 800px; margin: 0 auto; text-align: center; }
+.simple-welcome h1 { color: var(--dark); margin-bottom: 10px; }
+.simple-welcome p { color: #666; margin-bottom: 30px; font-size: 1.1rem; }
+.quick-links { display: flex; flex-direction: column; gap: 15px; max-width: 400px; margin: 0 auto; }
+.quick-link { background: var(--primary); color: white; padding: 15px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; transition: 0.3s; }
+.quick-link:hover { background: var(--secondary); transform: translateY(-2px); }
 
 /* PDF VIEW */
 .no-print-bar { background: #333; color: white; padding: 15px; text-align: center; margin-bottom: 20px; border-radius: 8px; display: flex; justify-content: center; gap: 15px; align-items: center; flex-wrap: wrap; }
@@ -1047,6 +1054,22 @@ function togglePenalties() {
 function toggleAdvanced() {
     const panel = document.getElementById('advancedOptions');
     panel.classList.toggle('hidden');
+}
+
+function toggleSignatureNames() {
+    const checkbox = document.getElementById('includeSignatures');
+    const namesDiv = document.getElementById('signatureNames');
+    const inputs = namesDiv.querySelectorAll('input');
+    
+    if (checkbox.checked) {
+        namesDiv.classList.remove('hidden');
+        inputs[0].setAttribute('required', 'true');
+        inputs[1].setAttribute('required', 'true');
+    } else {
+        namesDiv.classList.add('hidden');
+        inputs[0].removeAttribute('required');
+        inputs[1].removeAttribute('required');
+    }
 }
 
 function previewLogo(input) {
