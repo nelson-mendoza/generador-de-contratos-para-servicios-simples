@@ -1,0 +1,1117 @@
+ok mira pero este es el codigo completo que tienes que corregir ok no otro mira # 1. Crear la estructura de carpetas
+mkdir -p ContratoExpress/{templates,static,uploads}
+cd ContratoExpress
+
+# 2. Crear requirements.txt (Solo lo necesario, limpio)
+cat > requirements.txt << 'EOF'
+Flask==2.3.3
+Werkzeug==2.3.7
+Flask-WTF==1.2.1
+EOF
+
+# 3. Crear rules.py (Base de datos y validaciones robustas)
+# Aquí apliqué lo de las Foreign Keys y validaciones seguras
+cat > rules.py << 'EOF'
+import sqlite3
+from datetime import datetime
+from werkzeug.security import generate_password_hash, check_password_hash
+
+DATABASE = 'contracts.db'
+
+def get_db():
+    """
+    Conecta a la DB. 
+    IMPORTANTE: Activamos PRAGMA foreign_keys = ON para que SQLite respete las relaciones.
+    Si borras un usuario, se borran sus contratos (o da error si hay datos, según configuración).
+    """
+    conn = sqlite3.connect(DATABASE)
+    conn.execute("PRAGMA foreign_keys = ON") # Corrección de integridad
+    conn.row_factory = sqlite3.Row 
+    cursor = conn.cursor()
+    
+    # Tabla de usuarios
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Tabla de contratos con clave foránea real
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS contracts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            city_location TEXT NOT NULL, -- Nuevo campo para ciudad dinámica
+            provider_name TEXT NOT NULL,
+            provider_phone TEXT NOT NULL,
+            provider_logo TEXT,
+            client_name TEXT NOT NULL,
+            client_phone TEXT NOT NULL,
+            service_type TEXT NOT NULL,
+            service_title TEXT NOT NULL,
+            service_desc TEXT NOT NULL,
+            has_materials BOOLEAN,
+            materials_details TEXT,
+            is_quote_pending BOOLEAN,
+            payment_structure TEXT NOT NULL,
+            payment_timing TEXT NOT NULL,
+            total_amount REAL NOT NULL,
+            advance_amount REAL,
+            remaining_amount REAL,
+            payment_method TEXT NOT NULL,
+            bank_details TEXT,
+            crypto_wallet TEXT,
+            other_method TEXT,
+            deadline DATE NOT NULL,
+            penalty_rate REAL,
+            rfc_provider TEXT,
+            rfc_client TEXT,
+            address_provider TEXT,
+            address_client TEXT,
+            email_client TEXT,
+            witness_name TEXT,
+            include_confidentiality BOOLEAN,
+            include_signatures BOOLEAN,
+            sig_provider_name TEXT,
+            sig_client_name TEXT,
+            sig_witness_name TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        )
+    ''')
+    conn.commit()
+    return conn
+
+def validate_contract(data):
+    """
+    Validación lado servidor. 
+    Nunca confiar solo en el navegador (JS).
+    Manejo seguro de errores al convertir números.
+    """
+    errors = []
+    
+    # Validaciones de texto básico
+    if len(data.get('provider_name', '')) < 3:
+        errors.append("Nombre del prestador muy corto.")
+    if len(data.get('client_name', '')) < 3:
+        errors.append("Nombre del cliente muy corto.")
+    if len(data.get('city_location', '')) < 3:
+        errors.append("Falta la ciudad de expedición.")
+        
+    # Teléfonos (solo dígitos, mínimo 7 para aceptar internacionales)
+    phone_p = data.get('provider_phone', '').replace(" ", "").replace("-", "")
+    phone_c = data.get('client_phone', '').replace(" ", "").replace("-", "")
+    if not phone_p.isdigit() or len(phone_p) < 7:
+        errors.append("Teléfono del prestador inválido (mínimo 7 dígitos).")
+    if not phone_c.isdigit() or len(phone_c) < 7:
+        errors.append("Teléfono del cliente inválido (mínimo 7 dígitos).")
+        
+    if len(data.get('service_desc', '')) < 5:
+        errors.append("Descripción muy corta.")
+        
+    # Validación numérica segura (Try/Except para evitar crash 500)
+    try:
+        total = float(data.get('total_amount', 0))
+        if total <= 0:
+            errors.append("El monto debe ser mayor a 0.")
+            
+        if data.get('payment_structure') == 'advance':
+            advance = float(data.get('advance_amount', 0))
+            remaining = float(data.get('remaining_amount', 0))
+            # Pequeño margen de error por decimales flotantes (1 centavo)
+            if abs((advance + remaining) - total) > 0.01: 
+                errors.append("La suma del anticipo y resto no coincide con el total.")
+    except ValueError:
+        errors.append("Error en los montos: asegúrate de usar números válidos.")
+
+    # Fecha futura
+    try:
+        deadline_str = data.get('deadline')
+        if not deadline_str:
+            errors.append("Falta la fecha límite.")
+        else:
+            deadline = datetime.strptime(deadline_str, '%Y-%m-%d')
+            if deadline.date() < datetime.now().date():
+                errors.append("La fecha límite no puede ser en el pasado.")
+    except ValueError:
+        errors.append("Formato de fecha inválido.")
+
+    # Condicionales lógicos
+    if data.get('has_materials') == 'on' and not data.get('materials_details'):
+        errors.append("Debe detallar los materiales si los incluye.")
+        
+    if data.get('payment_method') == 'transfer' and not data.get('bank_details'):
+        errors.append("Faltan datos bancarios.")
+
+    if data.get('include_signatures') == 'on':
+        # Validar nombres de firmas SOLO si la opción está marcada
+        sig_provider = data.get('sig_provider_name', '').strip()
+        sig_client = data.get('sig_client_name', '').strip()
+        if not sig_provider:
+            errors.append("Falta el nombre para la firma del prestador.")
+        if not sig_client:
+            errors.append("Falta el nombre para la firma del cliente.")
+
+    return errors
+
+def register_user(username, password):
+    """Registro con hash seguro."""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    existing = cursor.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+    if existing:
+        conn.close()
+        return False, "El usuario ya existe."
+    
+    # Hash de contraseña (Estándar de seguridad)
+    password_hash = generate_password_hash(password)
+    
+    try:
+        cursor.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", 
+                       (username, password_hash))
+        conn.commit()
+        conn.close()
+        return True, "Usuario creado."
+    except Exception as e:
+        conn.close()
+        return False, str(e)
+
+def login_user(username, password):
+    """Login verificando hash."""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    user = cursor.execute("SELECT id, password_hash FROM users WHERE username = ?", (username,)).fetchone()
+    conn.close()
+    
+    if user and check_password_hash(user['password_hash'], password):
+        return user['id']
+    return None
+EOF
+
+# 4. Crear app.py (Lógica principal con correcciones)
+cat > app.py << 'EOF'
+from flask import Flask, render_template, request, redirect, session, flash, url_for, send_from_directory
+from flask_wtf.csrf import CSRFProtect
+from rules import get_db, validate_contract, register_user, login_user
+from werkzeug.utils import secure_filename
+import os
+import time # Para nombres únicos de archivos
+
+app = Flask(__name__)
+# Clave secreta generada automáticamente para mayor seguridad
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24).hex()) 
+
+UPLOAD_FOLDER = 'uploads'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+# Crear carpeta uploads al iniciar (fuera del main para funcionar con flask run)
+# Inicializar protección CSRF
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+csrf = CSRFProtect(app)
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# --- Rutas de Autenticación ---
+
+@app.route('/')
+def index():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    return render_template('dashboard.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        confirm = request.form.get('confirm')
+        
+        if not username or len(username) < 3:
+            flash("Usuario muy corto.", "error")
+            return redirect(url_for('register'))
+        if not password or len(password) < 6:
+            flash("Contraseña débil (min 6).", "error")
+            return redirect(url_for('register'))
+        if password != confirm:
+            flash("Las contraseñas no coinciden.", "error")
+            return redirect(url_for('register'))
+            
+        success, msg = register_user(username, password)
+        if success:
+            flash("Cuenta creada. Inicie sesión.", "success")
+            return redirect(url_for('login'))
+        else:
+            flash(msg, "error")
+            
+    return render_template('register.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        user_id = login_user(username, password)
+        if user_id:
+            session['user_id'] = user_id
+            session['username'] = username
+            return redirect(url_for('index'))
+        else:
+            flash("Credenciales inválidas.", "error")
+            
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+@app.route('/delete_account', methods=['POST'])
+def delete_account():
+    """Borra cuenta y contratos (Cascada manual por seguridad)."""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM contracts WHERE user_id = ?", (session['user_id'],))
+    cursor.execute("DELETE FROM users WHERE id = ?", (session['user_id'],))
+    conn.commit()
+    conn.close()
+    session.clear()
+    flash("Cuenta eliminada.", "warning")
+    return redirect(url_for('register'))
+
+# --- Rutas de la App ---
+
+@app.route('/new_contract', methods=['GET', 'POST'])
+def new_contract():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+        
+    if request.method == 'POST':
+        errors = validate_contract(request.form)
+        
+        # Manejo de Logo con nombre único (timestamp) para evitar sobrescribir
+        logo_filename = None
+        if 'logo' in request.files:
+            file = request.files['logo']
+            if file and file.filename != '' and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                # Nombre único: user_id_timestamp_nombre.ext
+                unique_name = f"{session['user_id']}_{int(time.time())}_{filename}"
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], unique_name))
+                logo_filename = unique_name
+            elif file:
+                errors.append("Imagen no válida (solo JPG/PNG).")
+
+        if errors:
+            # CORRECCIÓN: En vez de redirect (que borra datos), renderizamos con errores
+            # Pasamos los datos del formulario (request.form) para rellenar los inputs
+            for err in errors:
+                flash(err, "error")
+            return render_template('form.html', form_data=request.form)
+
+        # Guardar en DB
+        conn = get_db()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                INSERT INTO contracts (
+                    user_id, city_location, provider_name, provider_phone, provider_logo,
+                    client_name, client_phone, service_type, service_title, service_desc,
+                    has_materials, materials_details, is_quote_pending,
+                    payment_structure, payment_timing, total_amount, advance_amount, remaining_amount,
+                    payment_method, bank_details, crypto_wallet, other_method, deadline, penalty_rate,
+                    rfc_provider, rfc_client, address_provider, address_client, email_client,
+                    witness_name, include_confidentiality, include_signatures,
+                    sig_provider_name, sig_client_name, sig_witness_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                session['user_id'],
+                request.form.get('city_location'), # Nueva ciudad
+                request.form.get('provider_name'), request.form.get('provider_phone'), logo_filename,
+                request.form.get('client_name'), request.form.get('client_phone'),
+                request.form.get('service_type'), request.form.get('service_title'), request.form.get('service_desc'),
+                1 if request.form.get('has_materials') else 0, request.form.get('materials_details'),
+                1 if request.form.get('is_quote_pending') else 0,
+                request.form.get('payment_structure'), request.form.get('payment_timing'),
+                float(request.form.get('total_amount')),
+                float(request.form.get('advance_amount') or 0),
+                float(request.form.get('remaining_amount') or 0),
+                request.form.get('payment_method'), request.form.get('bank_details'),
+                request.form.get('crypto_wallet'), request.form.get('other_method'),
+                request.form.get('deadline'), float(request.form.get('penalty_rate') or 0),
+                request.form.get('rfc_provider'), request.form.get('rfc_client'),
+                request.form.get('address_provider'), request.form.get('address_client'),
+                request.form.get('email_client'), request.form.get('witness_name'),
+                1 if request.form.get('include_confidentiality') else 0,
+                1 if request.form.get('include_signatures') else 0,
+                request.form.get('sig_provider_name'), request.form.get('sig_client_name'),
+                request.form.get('sig_witness_name')
+            ))
+            contract_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+            
+            flash("Contrato generado con éxito.", "success")
+            return redirect(url_for('view_contract', contract_id=contract_id))
+            
+        except Exception as e:
+            conn.close()
+            flash(f"Error al guardar: {str(e)}", "error")
+            return render_template('form.html', form_data=request.form)
+
+    return render_template('form.html', form_data=None)
+
+@app.route('/history')
+def history():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    conn = get_db()
+    contracts = conn.execute(
+        "SELECT * FROM contracts WHERE user_id = ? ORDER BY created_at DESC", 
+        (session['user_id'],)
+    ).fetchall()
+    conn.close()
+    return render_template('history.html', contracts=contracts)
+
+@app.route('/view/<int:contract_id>')
+def view_contract(contract_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    conn = get_db()
+    # Asegurar que el contrato pertenece al usuario logueado
+    contract = conn.execute(
+        "SELECT * FROM contracts WHERE id = ? AND user_id = ?", 
+        (contract_id, session['user_id'])
+    ).fetchone()
+    conn.close()
+    
+    if not contract:
+        flash("Contrato no encontrado.", "error")
+        return redirect(url_for('history'))
+        
+    return render_template('pdf_view.html', contract=contract)
+
+@app.route('/delete/<int:contract_id>', methods=['POST'])
+def delete_contract(contract_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+        
+    conn = get_db()
+    contract = conn.execute("SELECT provider_logo FROM contracts WHERE id = ? AND user_id = ?", 
+                            (contract_id, session['user_id'])).fetchone()
+    if contract:
+        if contract['provider_logo']:
+            try:
+                os.remove(os.path.join(app.config['UPLOAD_FOLDER'], contract['provider_logo']))
+            except FileNotFoundError:
+                pass
+        conn.execute("DELETE FROM contracts WHERE id = ?", (contract_id,))
+        conn.commit()
+        flash("Contrato eliminado.", "warning")
+    conn.close()
+    return redirect(url_for('history'))
+
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+if __name__ == '__main__':
+    app.run(debug=True)
+EOF
+
+# 5. Templates HTML
+
+# Base Layout
+cat > templates/base.html << 'EOF'
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ContratoExpress</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    {% if session.user_id %}
+    <div class="sidebar">
+        <h2> ContratoExpress</h2>
+        <nav>
+            <a href="{{ url_for('index') }}"> Inicio</a>
+            <a href="{{ url_for('new_contract') }}"> Nuevo Contrato</a>
+            <a href="{{ url_for('history') }}">Historial</a>
+            <hr>
+            <a href="{{ url_for('logout') }}" class="logout"> Cerrar Sesión</a>
+            <form action="{{ url_for('delete_account') }}" method="POST" onsubmit="return confirm('¿Seguro? Se borrará todo.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="danger-btn"> Eliminar Cuenta</button>
+            </form>
+        </nav>
+    </div>
+    <div class="main-content">
+    {% else %}
+    <div class="full-page-container">
+    {% endif %}
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+
+    {% if session.user_id %}</div>{% else %}</div>{% endif %}
+    
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
+EOF
+
+# Login
+cat > templates/login.html << 'EOF'
+{% extends "base.html" %}
+{% block content %}
+<div class="auth-card">
+    <h1>Iniciar Sesión</h1>
+    <form method="POST">
+        <input type="text" name="username" placeholder="Usuario" required autofocus>
+        <input type="password" name="password" placeholder="Contraseña" required>
+        <button type="submit" class="btn-primary">Entrar</button>
+    </form>
+    <p>¿No tienes cuenta? <a href="{{ url_for('register') }}">Regístrate aquí</a></p>
+</div>
+{% endblock %}
+EOF
+
+# Register
+cat > templates/register.html << 'EOF'
+{% extends "base.html" %}
+{% block content %}
+<div class="auth-card">
+    <h1>Crear Cuenta</h1>
+    <form method="POST">
+        <input type="text" name="username" placeholder="Nombre de Usuario" required minlength="3">
+        <input type="password" name="password" placeholder="Contraseña (Min 6)" required minlength="6">
+        <input type="password" name="confirm" placeholder="Confirmar Contraseña" required>
+        <button type="submit" class="btn-success">Registrarse</button>
+    </form>
+    <p>¿Ya tienes cuenta? <a href="{{ url_for('login') }}">Inicia sesión</a></p>
+</div>
+{% endblock %}
+EOF
+
+# Dashboard
+cat > templates/dashboard.html << 'EOF'
+{% extends "base.html" %}
+{% block content %}
+<div class="simple-welcome">
+    <h1>¡Hola, {{ session.username }}!</h1>
+    <p>Bienvenido a <strong>ContratoExpress</strong>.</p>
+    <div class="quick-links">
+        <a href="{{ url_for('new_contract') }}" class="quick-link"> Crear Nuevo Contrato</a>
+        <a href="{{ url_for('history') }}" class="quick-link">Ver Historial</a>
+    </div>
+</div>
+{% endblock %}
+EOF
+
+# Formulario Principal (Con corrección de persistencia de datos)
+cat > templates/form.html << 'EOF'
+{% extends "base.html" %}
+{% block content %}
+<div class="form-container">
+    <h1> Generador de Contratos</h1>
+    <p class="subtitle">Completa los datos para generar tu documento legal.</p>
+
+    <!-- Usamos form_data para rellenar si hubo error -->
+    <form method="POST" enctype="multipart/form-data" id="contractForm">
+        
+        <!-- SECCIÓN 1: DATOS BÁSICOS -->
+        <fieldset>
+            <legend>Datos Básicos</legend>
+            <div class="grid-2">
+                <div>
+                    <label>Prestador (Tú)</label>
+                    <input type="text" name="provider_name" value="{{ form_data.provider_name if form_data else '' }}" placeholder="Nombre completo" required>
+                    <input type="text" name="provider_phone" value="{{ form_data.provider_phone if form_data else '' }}" placeholder="Teléfono (mínimo 7 dígitos)" pattern="[0-9]{7,}" required>
+                </div>
+                <div>
+                    <label>Cliente</label>
+                    <input type="text" name="client_name" value="{{ form_data.client_name if form_data else '' }}" placeholder="Nombre completo" required>
+                    <input type="text" name="client_phone" value="{{ form_data.client_phone if form_data else '' }}" placeholder="Teléfono (mínimo 7 dígitos)" pattern="[0-9]{7,}" required>
+                </div>
+            </div>
+            
+            <!-- NUEVO CAMPO: Ciudad -->
+            <label>Ciudad de Expedición</label>
+            <input type="text" name="city_location" value="{{ form_data.city_location if form_data else '' }}" placeholder="Ej: Guadalajara, Monterrey, CDMX..." required>
+
+            <div class="file-upload-wrapper">
+                <label>📷 Logo (Opcional)</label>
+                <input type="file" name="logo" accept="image/png, image/jpeg" onchange="previewLogo(this)">
+                <img id="logoPreview" class="hidden" alt="Vista previa">
+            </div>
+        </fieldset>
+
+        <!-- SECCIÓN 2: SERVICIO -->
+        <fieldset>
+            <legend>Detalles del Servicio</legend>
+            <label>Tipo de Servicio</label>
+            <select name="service_type" id="serviceType" onchange="toggleOtherService()">
+                <option value="Soporte Técnico" {{ 'selected' if form_data and form_data.service_type == 'Soporte Técnico' else '' }}>Soporte Técnico</option>
+                <option value="Electricidad" {{ 'selected' if form_data and form_data.service_type == 'Electricidad' else '' }}>Electricidad</option>
+                <option value="Plomería" {{ 'selected' if form_data and form_data.service_type == 'Plomería' else '' }}>Plomería</option>
+                <option value="Enseñanza" {{ 'selected' if form_data and form_data.service_type == 'Enseñanza' else '' }}>Enseñanza</option>
+                <option value="Otros" {{ 'selected' if form_data and form_data.service_type == 'Otros' else '' }}>Otro...</option>
+            </select>
+            
+            <!-- Input personalizado para "Otros" -->
+            <input type="text" name="service_title_custom" id="customServiceInput" 
+                   value="{{ form_data.service_title if form_data and form_data.service_type == 'Otros' else '' }}" 
+                   class="{{ 'hidden' if not form_data or form_data.service_type != 'Otros' else '' }}" 
+                   placeholder="Especifique el servicio personalizado">
+            
+            <label>Título Corto del Servicio</label>
+            <input type="text" name="service_title" value="{{ form_data.service_title if form_data and form_data.service_type != 'Otros' else '' }}" placeholder="Ej: Mantenimiento PC" required>
+
+            <label>Descripción Detallada</label>
+            <textarea name="service_desc" rows="3" placeholder="Describe exactamente qué harás..." required>{{ form_data.service_desc if form_data else '' }}</textarea>
+
+            <div class="checkbox-group">
+                <label class="switch-label">
+                    <input type="checkbox" name="has_materials" id="hasMaterials" onchange="toggleMaterials()" {{ 'checked' if form_data and form_data.has_materials else '' }}>
+                    ¿Incluye Materiales?
+                </label>
+                <div id="materialsOptions" class="{{ 'hidden' if not form_data or not form_data.has_materials else '' }}">
+                    <textarea name="materials_details" placeholder="Lista de materiales incluidos...">{{ form_data.materials_details if form_data else '' }}</textarea>
+                </div>
+            </div>
+
+            <label class="checkbox-label">
+                <input type="checkbox" name="is_quote_pending" {{ 'checked' if form_data and form_data.is_quote_pending else '' }}> Cotización Pendiente
+            </label>
+        </fieldset>
+
+        <!-- SECCIÓN 3: PAGOS -->
+        <fieldset>
+            <legend>Pagos y Fechas</legend>
+            <div class="grid-2">
+                <div>
+                    <label>Estructura</label>
+                    <select name="payment_structure" id="payStructure" onchange="calcRemaining()">
+                        <option value="single" {{ 'selected' if form_data and form_data.payment_structure == 'single' else '' }}>Pago Único</option>
+                        <option value="advance" {{ 'selected' if form_data and form_data.payment_structure == 'advance' else '' }}>Anticipo + Resto</option>
+                        <option value="partial" {{ 'selected' if form_data and form_data.payment_structure == 'partial' else '' }}>Parcial</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Momento del Pago</label>
+                    <select name="payment_timing" id="payTiming" onchange="togglePenalties()">
+                        <option value="before" {{ 'selected' if form_data and form_data.payment_timing == 'before' else '' }}>Antes de iniciar</option>
+                        <option value="after" {{ 'selected' if form_data and form_data.payment_timing == 'after' else '' }}>Al finalizar</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid-3">
+                <div>
+                    <label>Total ($)</label>
+                    <input type="number" step="0.01" name="total_amount" id="totalAmount" value="{{ form_data.total_amount if form_data else '' }}" oninput="calcRemaining()" required>
+                </div>
+                <div id="advanceDiv" class="{{ 'hidden' if not form_data or form_data.payment_structure == 'single' else '' }}">
+                    <label>Anticipo ($)</label>
+                    <input type="number" step="0.01" name="advance_amount" id="advanceAmount" value="{{ form_data.advance_amount if form_data else '' }}" oninput="calcRemaining()">
+                </div>
+                <div id="remainingDiv" class="{{ 'hidden' if not form_data or form_data.payment_structure == 'single' else '' }}">
+                    <label>Resto ($)</label>
+                    <input type="number" step="0.01" name="remaining_amount" id="remainingAmount" value="{{ form_data.remaining_amount if form_data else '' }}" readonly>
+                </div>
+            </div>
+
+            <label>Método de Pago</label>
+            <select name="payment_method" id="payMethod" onchange="togglePaymentDetails()">
+                <option value="cash" {{ 'selected' if form_data and form_data.payment_method == 'cash' else '' }}>Efectivo</option>
+                <option value="transfer" {{ 'selected' if form_data and form_data.payment_method == 'transfer' else '' }}>Transferencia Bancaria</option>
+                <option value="crypto" {{ 'selected' if form_data and form_data.payment_method == 'crypto' else '' }}>Criptomoneda</option>
+                <option value="other" {{ 'selected' if form_data and form_data.payment_method == 'other' else '' }}>Otro</option>
+            </select>
+
+            <div id="bankDetails" class="{{ 'hidden' if not form_data or form_data.payment_method != 'transfer' else '' }}">
+                <input type="text" name="bank_details" value="{{ form_data.bank_details if form_data else '' }}" placeholder="Banco y CLABE/Account">
+            </div>
+            <div id="cryptoDetails" class="{{ 'hidden' if not form_data or form_data.payment_method != 'crypto' else '' }}">
+                <input type="text" name="crypto_wallet" value="{{ form_data.crypto_wallet if form_data else '' }}" placeholder="Dirección de Wallet">
+            </div>
+            <div id="otherDetails" class="{{ 'hidden' if not form_data or form_data.payment_method != 'other' else '' }}">
+                <input type="text" name="other_method" value="{{ form_data.other_method if form_data else '' }}" placeholder="Detalles del método">
+            </div>
+
+            <label>Fecha Límite de Entrega</label>
+            <input type="date" name="deadline" value="{{ form_data.deadline if form_data else '' }}" required>
+
+            <div id="penaltySection" class="{{ 'hidden' if form_data and form_data.payment_timing == 'before' else '' }}">
+                <label class="checkbox-label">
+                    <input type="checkbox" name="apply_penalty" checked> Aplicar penalización por retraso
+                </label>
+                <input type="number" step="0.1" name="penalty_rate" value="{{ form_data.penalty_rate if form_data else '5.0' }}" placeholder="% diario">
+            </div>
+        </fieldset>
+
+        <!-- BOTÓN DESPLEGABLE AVANZADO -->
+        <button type="button" class="btn-toggle" onclick="toggleAdvanced()"> Opciones Avanzadas (RFC, Firmas...)</button>
+        
+        <div id="advancedOptions" class="{{ 'hidden' if not form_data else '' }} advanced-panel">
+            <div class="grid-2">
+                <input type="text" name="rfc_provider" value="{{ form_data.rfc_provider if form_data else '' }}" placeholder="RFC Prestador">
+                <input type="text" name="rfc_client" value="{{ form_data.rfc_client if form_data else '' }}" placeholder="RFC Cliente">
+                <input type="text" name="address_provider" value="{{ form_data.address_provider if form_data else '' }}" placeholder="Dirección Prestador">
+                <input type="text" name="address_client" value="{{ form_data.address_client if form_data else '' }}" placeholder="Dirección Cliente">
+                <input type="email" name="email_client" value="{{ form_data.email_client if form_data else '' }}" placeholder="Email Cliente">
+                <input type="text" name="witness_name" value="{{ form_data.witness_name if form_data else '' }}" placeholder="Nombre Testigo">
+            </div>
+            <label class="checkbox-label">
+                <input type="checkbox" name="include_confidentiality" {{ 'checked' if form_data and form_data.include_confidentiality else '' }}> Incluir Confidencialidad
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" name="include_signatures" id="includeSignatures" onchange="toggleSignatureNames()" {{ 'checked' if form_data and form_data.include_signatures else '' }}> Imprimir Espacio para Firmas
+            </label>
+            <div id="signatureNames" class="grid-3 {{ 'hidden' if not form_data or not form_data.include_signatures else '' }}">
+                <input type="text" name="sig_provider_name" value="{{ form_data.sig_provider_name if form_data else '' }}" placeholder="Nombre Impreso (Prestador)">
+                <input type="text" name="sig_client_name" value="{{ form_data.sig_client_name if form_data else '' }}" placeholder="Nombre Impreso (Cliente)">
+                <input type="text" name="sig_witness_name" value="{{ form_data.sig_witness_name if form_data else '' }}" placeholder="Nombre Impreso (Testigo)">
+            </div>
+        </div>
+
+        <button type="submit" class="btn-generate"> Cerrar Trato y Generar Contrato</button>
+    </form>
+</div>
+{% endblock %}
+EOF
+
+# Vista Previa PDF (Con ciudad dinámica)
+cat > templates/pdf_view.html << 'EOF'
+{% extends "base.html" %}
+{% block content %}
+<div class="no-print-bar">
+    <a href="{{ url_for('history') }}" class="btn-secondary">← Volver</a>
+    <button onclick="window.print()" class="btn-primary"> Guardar como PDF</button>
+    <form action="{{ url_for('delete_contract', contract_id=contract.id) }}" method="POST" style="display:inline;" onsubmit="return confirm('¿Borrar?');">
+        <button type="submit" class="btn-danger"> Borrar</button>
+    </form>
+    <p class="hint"> Tip: En impresión, selecciona "Guardar como PDF". Los márgenes están ajustados automáticamente.</p>
+</div>
+
+<!-- HOJA A4 -->
+<div class="a4-page">
+    <div class="pdf-header">
+        <div class="header-left">
+            {% if contract.provider_logo %}
+                <img src="{{ url_for('uploaded_file', filename=contract.provider_logo) }}" class="company-logo">
+            {% endif %}
+        </div>
+        <div class="header-center">
+            <h1>CONTRATO DE PRESTACIÓN DE SERVICIOS</h1>
+            <!-- Ciudad dinámica desde la BD -->
+            <p>En {{ contract.city_location }}, a {{ contract.deadline }}.</p>
+        </div>
+        <div class="header-right">
+            <strong>{{ contract.provider_name }}</strong><br>
+            Tel: {{ contract.provider_phone }}<br>
+            {% if contract.rfc_provider %}RFC: {{ contract.rfc_provider }}{% endif %}
+        </div>
+    </div>
+
+    <div class="pdf-section">
+        <h3>LAS PARTES</h3>
+        <p>Entre <strong>{{ contract.provider_name }}</strong> ("PRESTADOR") y <strong>{{ contract.client_name }}</strong> ("CLIENTE").</p>
+        {% if contract.address_provider or contract.address_client %}
+        <p class="small-text">
+            {% if contract.address_provider %}Dom. Prestador: {{ contract.address_provider }}. {% endif %}
+            {% if contract.address_client %}Dom. Cliente: {{ contract.address_client }}. {% endif %}
+        </p>
+        {% endif %}
+    </div>
+
+    <div class="pdf-section">
+        <h3>PRIMERA. OBJETO</h3>
+        <p>El PRESTADOR realizará: <strong>{{ contract.service_title }}</strong>. Detalle: {{ contract.service_desc }}.</p>
+    </div>
+
+    <div class="pdf-section">
+        <h3>SEGUNDA. MATERIALES</h3>
+        {% if contract.has_materials %}
+            <p>Incluye: {{ contract.materials_details }}. El resto corre por el CLIENTE.</p>
+        {% else %}
+            <p>Los materiales son proporcionados por el CLIENTE.</p>
+        {% endif %}
+    </div>
+
+    <div class="pdf-section">
+        <h3>TERCERA. HONORARIOS</h3>
+        <p>Costo total: <strong>${{ "%.2f"|format(contract.total_amount) }}</strong>.</p>
+        
+        {% if contract.payment_structure == 'advance' %}
+            <p>Anticipo: ${{ "%.2f"|format(contract.advance_amount) }} al firmar. Resto: ${{ "%.2f"|format(contract.remaining_amount) }} al finalizar.</p>
+        {% endif %}
+
+        {% if contract.payment_method == 'transfer' %}
+            <p>Pago vía Transferencia a: {{ contract.bank_details }}.</p>
+        {% elif contract.payment_method == 'crypto' %}
+            <p>Pago vía Cripto a: {{ contract.crypto_wallet }}.</p>
+        {% elif contract.payment_method == 'other' %}
+            <p>Pago vía: {{ contract.other_method }}.</p>
+        {% else %}
+            <p>Pago en Efectivo.</p>
+        {% endif %}
+    </div>
+
+    <div class="pdf-section">
+        <h3>CUARTA. PLAZO</h3>
+        <p>Entrega máxima: <strong>{{ contract.deadline }}</strong>.</p>
+    </div>
+
+    <div class="pdf-section">
+        <h3>QUINTA. GARANTÍA</h3>
+        <p>Garantía de 15 días por defectos de ejecución. No cubre mal uso.</p>
+    </div>
+
+    {% if contract.include_confidentiality %}
+    <div class="pdf-section">
+        <h3>SEXTA. CONFIDENCIALIDAD</h3>
+        <p>Reserva estricta sobre la información compartida.</p>
+    </div>
+    {% endif %}
+
+    {% if contract.payment_timing == 'after' %}
+    <div class="pdf-section">
+        <h3>SÉPTIMA. INCUMPLIMIENTO</h3>
+        <p>Retraso genera penalización del {{ contract.penalty_rate }}% diario. Cancelación si no se paga en fecha límite.</p>
+    </div>
+    {% endif %}
+
+    {% if contract.include_signatures %}
+    <div class="signatures-section">
+        <div class="sig-box">
+            <div class="sig-line"></div>
+            <p>{{ contract.sig_provider_name or contract.provider_name }}</p>
+            <small>EL PRESTADOR</small>
+        </div>
+        <div class="sig-box">
+            <div class="sig-line"></div>
+            <p>{{ contract.sig_client_name or contract.client_name }}</p>
+            <small>EL CLIENTE</small>
+        </div>
+        {% if contract.witness_name %}
+        <div class="sig-box">
+            <div class="sig-line"></div>
+            <p>{{ contract.sig_witness_name or contract.witness_name }}</p>
+            <small>TESTIGO</small>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+EOF
+
+# Historial
+cat > templates/history.html << 'EOF'
+{% extends "base.html" %}
+{% block content %}
+<h1>Historial de Contratos</h1>
+{% if contracts %}
+    <div class="contracts-list">
+        {% for c in contracts %}
+        <div class="contract-item">
+            <div>
+                <h3>{{ c.service_title }} - {{ c.client_name }}</h3>
+                <p>Fecha: {{ c.created_at[:10] }} | Total: ${{ c.total_amount }}</p>
+            </div>
+            <div class="actions">
+                <a href="{{ url_for('view_contract', contract_id=c.id) }}" class="btn-sm">Ver PDF</a>
+                <form action="{{ url_for('delete_contract', contract_id=c.id) }}" method="POST" onsubmit="return confirm('¿Eliminar?');">
+                    <button type="submit" class="btn-sm danger">Borrar</button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <p>No hay contratos aún.</p>
+    <a href="{{ url_for('new_contract') }}" class="btn-primary">Crear Nuevo</a>
+{% endif %}
+{% endblock %}
+EOF
+
+# 6. Estilos CSS (Con mejoras de impresión)
+cat > static/style.css << 'EOF'
+:root {
+    --primary: #4361ee;
+    --secondary: #3f37c9;
+    --success: #4cc9f0;
+    --dark: #1b263b;
+    --light: #f8f9fa;
+    --danger: #e63946;
+    --bg: #f0f2f5;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Roboto', sans-serif; }
+body { background-color: var(--bg); color: #333; display: flex; min-height: 100vh; }
+
+/* Sidebar */
+.sidebar { width: 250px; background: var(--dark); color: white; padding: 20px; display: flex; flex-direction: column; position: fixed; height: 100%; box-shadow: 2px 0 10px rgba(0,0,0,0.1); }
+.sidebar h2 { margin-bottom: 30px; font-size: 1.2rem; text-align: center; border-bottom: 1px solid #444; padding-bottom: 10px; color: white; }
+.sidebar nav a { display: block; color: white; text-decoration: none; padding: 12px 15px; margin-bottom: 8px; border-radius: 6px; transition: all 0.3s ease; background: rgba(255,255,255,0.05); border-left: 3px solid transparent; }
+.sidebar nav a:hover { background: var(--primary); border-left: 3px solid white; transform: translateX(5px); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+.danger-btn { background: none; border: 1px solid var(--danger); color: var(--danger); width: 100%; padding: 12px; margin-top: 20px; cursor: pointer; border-radius: 6px; transition: all 0.3s; font-weight: 500; }
+.danger-btn:hover { background: var(--danger); color: white; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3); }
+
+/* Main Content */
+.main-content { margin-left: 250px; flex: 1; padding: 40px; width: calc(100% - 250px); }
+.full-page-container { width: 100%; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+
+/* Auth Cards */
+.auth-card { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+.auth-card input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; }
+.auth-card button { width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+
+/* Forms */
+.form-container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); max-width: 900px; margin: 0 auto; }
+fieldset { border: 1px solid #eee; padding: 20px; margin-bottom: 20px; border-radius: 8px; }
+legend { font-weight: bold; color: var(--primary); padding: 0 10px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; }
+input, select, textarea { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ddd; border-radius: 5px; font-size: 1rem; }
+input:focus, textarea:focus { border-color: var(--primary); outline: none; }
+
+.file-upload-wrapper { margin: 15px 0; }
+#logoPreview { max-height: 80px; margin-top: 10px; display: block; border-radius: 5px; }
+
+.btn-toggle { background: #eee; border: none; padding: 10px; width: 100%; text-align: left; cursor: pointer; font-weight: bold; border-radius: 5px; margin-bottom: 10px; }
+.btn-generate { background: linear-gradient(45deg, var(--success), var(--primary)); color: white; border: none; padding: 15px; width: 100%; font-size: 1.1rem; font-weight: bold; border-radius: 8px; cursor: pointer; margin-top: 20px; box-shadow: 0 4px 15px rgba(67, 97, 238, 0.3); transition: transform 0.2s; }
+.btn-generate:hover { transform: translateY(-2px); }
+
+/* Alerts */
+.flash-messages { margin-bottom: 20px; }
+.alert { padding: 10px 15px; border-radius: 5px; margin-bottom: 10px; }
+.alert-error { background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; }
+.alert-success { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+.alert-warning { background: #fff3e0; color: #ef6c00; border: 1px solid #ffcc80; }
+
+/* History */
+.contract-item { background: white; padding: 15px; margin-bottom: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+.actions { display: flex; gap: 10px; }
+.btn-sm { padding: 5px 10px; text-decoration: none; border-radius: 4px; font-size: 0.9rem; border: none; cursor: pointer; }
+.btn-sm { background: var(--primary); color: white; }
+.btn-sm.danger { background: var(--danger); }
+
+/* Dashboard Simple - Sin tarjetas ni stickers */
+.simple-welcome { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); max-width: 800px; margin: 0 auto; text-align: center; }
+.simple-welcome h1 { color: var(--dark); margin-bottom: 10px; }
+.simple-welcome p { color: #666; margin-bottom: 30px; font-size: 1.1rem; }
+.quick-links { display: flex; flex-direction: column; gap: 15px; max-width: 400px; margin: 0 auto; }
+.quick-link { background: var(--primary); color: white; padding: 15px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; transition: 0.3s; }
+.quick-link:hover { background: var(--secondary); transform: translateY(-2px); }
+
+/* PDF VIEW */
+.no-print-bar { background: #333; color: white; padding: 15px; text-align: center; margin-bottom: 20px; border-radius: 8px; display: flex; justify-content: center; gap: 15px; align-items: center; flex-wrap: wrap; }
+.no-print-bar button { padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+.btn-primary { background: var(--success); color: #000; }
+.btn-secondary { background: #555; color: white; text-decoration: none; padding: 8px 15px; border-radius: 4px; }
+.btn-danger { background: var(--danger); color: white; }
+.hint { font-size: 0.8rem; opacity: 0.8; width: 100%; margin-top: 5px; }
+
+.a4-page { background: white; width: 210mm; min-height: 297mm; padding: 25mm; margin: 0 auto; box-shadow: 0 0 15px rgba(0,0,0,0.1); font-family: 'Times New Roman', serif; line-height: 1.6; color: #000; }
+.pdf-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 30px; }
+.header-center { text-align: center; flex: 1; }
+.header-center h1 { font-size: 18pt; text-transform: uppercase; margin-bottom: 5px; }
+.company-logo { max-height: 80px; max-width: 150px; object-fit: contain; }
+.pdf-section { margin-bottom: 20px; text-align: justify; }
+.pdf-section h3 { font-size: 12pt; text-transform: uppercase; border-bottom: 1px solid #ccc; margin-bottom: 10px; }
+.small-text { font-size: 9pt; color: #444; }
+.signatures-section { display: flex; justify-content: space-around; margin-top: 60px; page-break-inside: avoid; }
+.sig-box { text-align: center; width: 30%; }
+.sig-line { border-top: 1px solid #000; height: 40px; margin-bottom: 10px; }
+
+.hidden { display: none !important; }
+
+/* Responsive */
+@media (max-width: 768px) {
+    body { flex-direction: column; }
+    .sidebar { width: 100%; height: auto; position: relative; padding: 10px; }
+    .main-content { margin-left: 0; width: 100%; padding: 20px; }
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .a4-page { width: 100%; padding: 15mm; transform: scale(0.9); transform-origin: top center; }
+    .signatures-section { flex-direction: column; gap: 40px; }
+    .sig-box { width: 100%; }
+}
+
+/* PRINT MEDIA QUERY - AJUSTE FINAL DE MÁRGENES */
+@media print {
+    .sidebar, .no-print-bar, .flash-messages, button, a { display: none !important; }
+    body { background: white; margin: 0; padding: 0; }
+    .main-content, .full-page-container { margin: 0; padding: 0; width: 100%; }
+    .a4-page { box-shadow: none; margin: 0; width: 100%; padding: 20mm; } 
+    @page { margin: 1.5cm; size: A4; }
+}
+EOF
+
+# 7. JavaScript
+cat > static/script.js << 'EOF'
+// Lógica del formulario dinámico
+
+function toggleOtherService() {
+    const type = document.getElementById('serviceType').value;
+    const input = document.getElementById('customServiceInput');
+    if (type === 'Otros') {
+        input.classList.remove('hidden');
+        input.setAttribute('required', 'true');
+        input.name = "service_title"; 
+    } else {
+        input.classList.add('hidden');
+        input.removeAttribute('required');
+        input.name = ""; 
+    }
+}
+
+function toggleMaterials() {
+    const checkbox = document.getElementById('hasMaterials');
+    const options = document.getElementById('materialsOptions');
+    if (checkbox.checked) {
+        options.classList.remove('hidden');
+        options.querySelector('textarea').setAttribute('required', 'true');
+    } else {
+        options.classList.add('hidden');
+        options.querySelector('textarea').removeAttribute('required');
+    }
+}
+
+function calcRemaining() {
+    const structure = document.getElementById('payStructure').value;
+    const total = parseFloat(document.getElementById('totalAmount').value) || 0;
+    const advanceInput = document.getElementById('advanceAmount');
+    const remainingInput = document.getElementById('remainingAmount');
+    
+    const advanceDiv = document.getElementById('advanceDiv');
+    const remainingDiv = document.getElementById('remainingDiv');
+
+    if (structure === 'advance' || structure === 'partial') {
+        advanceDiv.classList.remove('hidden');
+        remainingDiv.classList.remove('hidden');
+        const advance = parseFloat(advanceInput.value) || 0;
+        remainingInput.value = (total - advance).toFixed(2);
+    } else {
+        advanceDiv.classList.add('hidden');
+        remainingDiv.classList.add('hidden');
+        advanceInput.value = '';
+        remainingInput.value = total.toFixed(2);
+    }
+}
+
+function togglePaymentDetails() {
+    const method = document.getElementById('payMethod').value;
+    document.getElementById('bankDetails').classList.add('hidden');
+    document.getElementById('cryptoDetails').classList.add('hidden');
+    document.getElementById('otherDetails').classList.add('hidden');
+    
+    document.querySelectorAll('#bankDetails input, #cryptoDetails input, #otherDetails input').forEach(i => i.removeAttribute('required'));
+
+    if (method === 'transfer') {
+        document.getElementById('bankDetails').classList.remove('hidden');
+        document.getElementById('bankDetails').querySelector('input').setAttribute('required', 'true');
+    } else if (method === 'crypto') {
+        document.getElementById('cryptoDetails').classList.remove('hidden');
+        document.getElementById('cryptoDetails').querySelector('input').setAttribute('required', 'true');
+    } else if (method === 'other') {
+        document.getElementById('otherDetails').classList.remove('hidden');
+        document.getElementById('otherDetails').querySelector('input').setAttribute('required', 'true');
+    }
+}
+
+function togglePenalties() {
+    const timing = document.getElementById('payTiming').value;
+    const section = document.getElementById('penaltySection');
+    if (timing === 'before') {
+        section.classList.add('hidden');
+    } else {
+        section.classList.remove('hidden');
+    }
+}
+
+function toggleAdvanced() {
+    const panel = document.getElementById('advancedOptions');
+    panel.classList.toggle('hidden');
+}
+
+function toggleSignatureNames() {
+    const checkbox = document.getElementById('includeSignatures');
+    const namesDiv = document.getElementById('signatureNames');
+    const inputs = namesDiv.querySelectorAll('input');
+    
+    if (checkbox.checked) {
+        namesDiv.classList.remove('hidden');
+        inputs[0].setAttribute('required', 'true');
+        inputs[1].setAttribute('required', 'true');
+    } else {
+        namesDiv.classList.add('hidden');
+        inputs[0].removeAttribute('required');
+        inputs[1].removeAttribute('required');
+    }
+}
+
+function previewLogo(input) {
+    const preview = document.getElementById('logoPreview');
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            preview.src = e.target.result;
+            preview.classList.remove('hidden');
+        }
+        reader.readAsDataURL(input.files[0]);
+    } else {
+        preview.classList.add('hidden');
+    }
+}
+
+document.getElementById('contractForm').addEventListener('submit', function(e) {
+    const total = parseFloat(document.getElementById('totalAmount').value);
+    if (total <= 0) {
+        e.preventDefault();
+        alert("El monto total debe ser mayor a 0.");
+        return false;
+    }
+    
+    const customInput = document.getElementById('customServiceInput');
+    if (!customInput.classList.contains('hidden')) {
+        if(!customInput.value) {
+            e.preventDefault();
+            alert("Especifica el tipo de servicio personalizado.");
+            return false;
+        }
+    }
+});
+EOF
+
+echo " PROYECTO COMPLETO CREADO EN: $(pwd)"
+echo "👉 PASOS FINALES:"
+echo "1. pip install -r requirements.txt"
+echo "2. python app.py"
+echo "3. Abre el puerto 5000 y disfruta tu proyecto final."
