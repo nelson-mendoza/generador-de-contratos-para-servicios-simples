@@ -147,7 +147,7 @@ def validate_contract(data):
         errors.append("Faltan datos bancarios.")
 
     if data.get('include_signatures') == 'on':
-        # Validar nombres de firmas siempre que se marque la opción, sin importar si están en avanzadas
+        # Validar nombres de firmas SOLO si la opción está marcada
         sig_provider = data.get('sig_provider_name', '').strip()
         sig_client = data.get('sig_client_name', '').strip()
         if not sig_provider:
@@ -448,16 +448,16 @@ cat > templates/base.html << 'EOF'
 <body>
     {% if session.user_id %}
     <div class="sidebar">
-        <h2>📄 ContratoExpress</h2>
+        <h2> ContratoExpress</h2>
         <nav>
-            <a href="{{ url_for('index') }}">🏠 Inicio</a>
+            <a href="{{ url_for('index') }}"> Inicio</a>
             <a href="{{ url_for('new_contract') }}">✍️ Nuevo Contrato</a>
             <a href="{{ url_for('history') }}">📂 Historial</a>
             <hr>
             <a href="{{ url_for('logout') }}" class="logout">🚪 Cerrar Sesión</a>
             <form action="{{ url_for('delete_account') }}" method="POST" onsubmit="return confirm('¿Seguro? Se borrará todo.');">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="danger-btn">🗑️ Eliminar Cuenta</button>
+                <button type="submit" class="danger-btn"> Eliminar Cuenta</button>
             </form>
         </nav>
     </div>
@@ -538,7 +538,7 @@ cat > templates/form.html << 'EOF'
 {% extends "base.html" %}
 {% block content %}
 <div class="form-container">
-    <h1>📝 Generador de Contratos</h1>
+    <h1> Generador de Contratos</h1>
     <p class="subtitle">Completa los datos para generar tu documento legal.</p>
 
     <!-- Usamos form_data para rellenar si hubo error -->
@@ -676,7 +676,7 @@ cat > templates/form.html << 'EOF'
         </fieldset>
 
         <!-- BOTÓN DESPLEGABLE AVANZADO -->
-        <button type="button" class="btn-toggle" onclick="toggleAdvanced()">⚙️ Opciones Avanzadas (RFC, Firmas...)</button>
+        <button type="button" class="btn-toggle" onclick="toggleAdvanced()"> Opciones Avanzadas (RFC, Firmas...)</button>
         
         <div id="advancedOptions" class="{{ 'hidden' if not form_data else '' }} advanced-panel">
             <div class="grid-2">
@@ -691,16 +691,16 @@ cat > templates/form.html << 'EOF'
                 <input type="checkbox" name="include_confidentiality" {{ 'checked' if form_data and form_data.include_confidentiality else '' }}> Incluir Confidencialidad
             </label>
             <label class="checkbox-label">
-                <input type="checkbox" name="include_signatures" id="includeSignatures" onchange="toggleSignatureNames()" {{ 'checked' if form_data is none or (form_data and form_data.include_signatures) else '' }}> Imprimir Espacio para Firmas
+                <input type="checkbox" name="include_signatures" id="includeSignatures" onchange="toggleSignatureNames()" {{ 'checked' if form_data and form_data.include_signatures else '' }}> Imprimir Espacio para Firmas
             </label>
             <div id="signatureNames" class="grid-3 {{ 'hidden' if not form_data or not form_data.include_signatures else '' }}">
-                <input type="text" name="sig_provider_name" value="{{ form_data.sig_provider_name if form_data else '' }}" placeholder="Nombre Impreso (Prestador)" {{ 'required' if form_data and form_data.include_signatures else '' }}>
-                <input type="text" name="sig_client_name" value="{{ form_data.sig_client_name if form_data else '' }}" placeholder="Nombre Impreso (Cliente)" {{ 'required' if form_data and form_data.include_signatures else '' }}>
+                <input type="text" name="sig_provider_name" value="{{ form_data.sig_provider_name if form_data else '' }}" placeholder="Nombre Impreso (Prestador)">
+                <input type="text" name="sig_client_name" value="{{ form_data.sig_client_name if form_data else '' }}" placeholder="Nombre Impreso (Cliente)">
                 <input type="text" name="sig_witness_name" value="{{ form_data.sig_witness_name if form_data else '' }}" placeholder="Nombre Impreso (Testigo)">
             </div>
         </div>
 
-        <button type="submit" class="btn-generate">✅ Cerrar Trato y Generar Contrato</button>
+        <button type="submit" class="btn-generate"> Cerrar Trato y Generar Contrato</button>
     </form>
 </div>
 {% endblock %}
@@ -712,11 +712,11 @@ cat > templates/pdf_view.html << 'EOF'
 {% block content %}
 <div class="no-print-bar">
     <a href="{{ url_for('history') }}" class="btn-secondary">← Volver</a>
-    <button onclick="window.print()" class="btn-primary">🖨️ Guardar como PDF</button>
+    <button onclick="window.print()" class="btn-primary"> Guardar como PDF</button>
     <form action="{{ url_for('delete_contract', contract_id=contract.id) }}" method="POST" style="display:inline;" onsubmit="return confirm('¿Borrar?');">
-        <button type="submit" class="btn-danger">🗑️ Borrar</button>
+        <button type="submit" class="btn-danger"> Borrar</button>
     </form>
-    <p class="hint">💡 Tip: En impresión, selecciona "Guardar como PDF". Los márgenes están ajustados automáticamente.</p>
+    <p class="hint"> Tip: En impresión, selecciona "Guardar como PDF". Los márgenes están ajustados automáticamente.</p>
 </div>
 
 <!-- HOJA A4 -->
@@ -1110,7 +1110,7 @@ document.getElementById('contractForm').addEventListener('submit', function(e) {
 });
 EOF
 
-echo "✅ PROYECTO COMPLETO CREADO EN: $(pwd)"
+echo " PROYECTO COMPLETO CREADO EN: $(pwd)"
 echo "👉 PASOS FINALES:"
 echo "1. pip install -r requirements.txt"
 echo "2. python app.py"
