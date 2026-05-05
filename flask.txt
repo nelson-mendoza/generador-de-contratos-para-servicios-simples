@@ -545,6 +545,7 @@ cat > templates/form.html << 'EOF'
 
     <!-- Usamos form_data para rellenar si hubo error -->
     <form method="POST" enctype="multipart/form-data" id="contractForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
         
         <!-- SECCIÓN 1: DATOS BÁSICOS -->
         <fieldset>
