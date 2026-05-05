@@ -1,8 +1,1 @@
-```
-# Backup and temporary files
-*.backup
-*.fixed_part1
-*_auditado.txt
-*_fixed.txt
-*_original_backup.txt
-```
+Nothing should be ignored based on the provided file changes. The only modified file is 'flask.txt', which appears to be a source/config file and not a build artifact, dependency, or temporary file.

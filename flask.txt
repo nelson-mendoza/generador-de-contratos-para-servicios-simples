@@ -219,8 +219,15 @@ if os.environ.get('FLASK_ENV') == 'production':
     # En producción, SECRET_KEY es obligatoria
     if not os.environ.get('SECRET_KEY'):
         raise ValueError("No SECRET_KEY set for production. Set FLASK_SECRET_KEY environment variable.")
-    app.secret_key = os.environ.get('SECRET_KEY')
-    
+
+# Configuración segura
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
+if not os.environ.get('SECRET_KEY'):
+    raise ValueError("No SECRET_KEY set for production. Set FLASK_SECRET_KEY environment variable.")
+app.secret_key = os.environ.get('SECRET_KEY')
+
 # Configuración de upload segura
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024  # Límite de 2MB para uploads
@@ -260,6 +267,8 @@ def validate_file_mime(file):
     # Verificar que sea una imagen válida
     img_type = imghdr.what(None, file_data)
     if img_type not in ['jpeg', 'png', 'gif']:
+        return False
+    return True
 
 # --- Rutas de Autenticación ---
 
@@ -368,23 +377,6 @@ def new_contract():
         
         # Manejo de Logo con nombre único (timestamp) para evitar sobrescribir
         logo_filename = None
-        if 'logo' in request.files:
-            file = request.files['logo']
-            if file and file.filename != '' and allowed_file(file.filename):
-                filename = secure_filename(file.filename)
-                # Nombre único: user_id_timestamp_nombre.ext
-                unique_name = f"{session['user_id']}_{int(time.time())}_{filename}"
-                file.save(os.path.join(app.config['UPLOAD_FOLDER'], unique_name))
-                logo_filename = unique_name
-            elif file:
-                errors.append("Imagen no válida (solo JPG/PNG).")
-
-        if errors:
-            # CORRECCIÓN: En vez de redirect (que borra datos), renderizamos con errores
-            # Pasamos los datos del formulario (request.form) para rellenar los inputs
-
-        # Procesar logo con validación MIME mejorada
-        logo_filename = None
         if 'provider_logo' in request.files:
             file = request.files['provider_logo']
             if file and file.filename != '' and allowed_file(file.filename):
@@ -394,11 +386,15 @@ def new_contract():
                     logo_filename = f"logo_{session['user_id']}_{int(time.time())}.{ext}"
                     file.save(os.path.join(app.config['UPLOAD_FOLDER'], logo_filename))
                 else:
-                    flash("El archivo no es una imagen válida (PNG, JPG).", "error")
-                    return render_template('form.html', form_data=request.form)
+                    errors.append("El archivo no es una imagen válida (PNG, JPG).")
             elif file and file.filename != '':
-                flash("Solo se permiten archivos PNG o JPG.", "error")
-                return render_template('form.html', form_data=request.form)
+                errors.append("Solo se permiten archivos PNG o JPG.")
+
+        if errors:
+            # CORRECCIÓN: En vez de redirect (que borra datos), renderizamos con errores
+            # Pasamos los datos del formulario (request.form) para rellenar los inputs
+            return render_template('form.html', form_data=request.form, errors=errors)
+
         conn = get_db()
         cursor = conn.cursor()
         try:
@@ -802,10 +798,6 @@ cat > templates/form.html << 'EOF'
 
             <label>Fecha Límite de Entrega</label>
             <input type="date" name="deadline" value="{{ form_data.deadline if form_data else '' }}" required>
-
-            <div id="penaltySection" class="{{ 'hidden' if form_data and form_data.payment_timing == 'before' else '' }}">
-                <label class="checkbox-label">
-                    <input type="checkbox" name="apply_penalty" id="applyPenalty" {{ 'checked' if form_data and form_data.apply_penalty else '' }} onchange="togglePenaltyInput()"> Aplicar penalización por retraso
 
         <!-- Campo oculto para apply_penalty (siempre existe en el form) -->
         <input type="hidden" name="apply_penalty" value="0">
@@ -1234,12 +1226,6 @@ function togglePenalties() {
     }
 }
 
-function togglePenaltyInput() {
-    const checkbox = document.getElementById('applyPenalty');
-    const penaltyInput = document.getElementById('penaltyRateInput');
-    penaltyInput.disabled = !checkbox.checked;
-}
-
 function toggleAdvanced() {
     const panel = document.getElementById('advancedOptions');
     panel.classList.toggle('hidden');
@@ -1267,6 +1253,13 @@ function previewLogo(input) {
         const reader = new FileReader();
         reader.onload = function(e) {
             preview.src = e.target.result;
+            preview.classList.remove('hidden');
+        }
+        reader.readAsDataURL(input.files[0]);
+    } else {
+        preview.classList.add('hidden');
+    }
+}
 
 // Función mejorada para mostrar/ocultar input de penalización
 function togglePenaltyInput() {
@@ -1325,32 +1318,6 @@ document.getElementById('contractForm').addEventListener('submit', function(e) {
         e.preventDefault();
         alert("Ingrese un valor de penalización válido (> 0).");
         return false;
-    }
-});
-            preview.src = e.target.result;
-            preview.classList.remove('hidden');
-        }
-        reader.readAsDataURL(input.files[0]);
-    } else {
-        preview.classList.add('hidden');
-    }
-}
-
-document.getElementById('contractForm').addEventListener('submit', function(e) {
-    const total = parseFloat(document.getElementById('totalAmount').value);
-    if (total <= 0) {
-        e.preventDefault();
-        alert("El monto total debe ser mayor a 0.");
-        return false;
-    }
-    
-    const customInput = document.getElementById('customServiceInput');
-    if (!customInput.classList.contains('hidden')) {
-        if(!customInput.value) {
-            e.preventDefault();
-            alert("Especifica el tipo de servicio personalizado.");
-            return false;
-        }
     }
 });
 EOF
