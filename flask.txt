@@ -492,6 +492,7 @@ cat > templates/login.html << 'EOF'
 <div class="auth-card">
     <h1>Iniciar Sesión</h1>
     <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="text" name="username" placeholder="Usuario" required autofocus>
         <input type="password" name="password" placeholder="Contraseña" required>
         <button type="submit" class="btn-primary">Entrar</button>
@@ -508,6 +509,7 @@ cat > templates/register.html << 'EOF'
 <div class="auth-card">
     <h1>Crear Cuenta</h1>
     <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="text" name="username" placeholder="Nombre de Usuario" required minlength="3">
         <input type="password" name="password" placeholder="Contraseña (Min 6)" required minlength="6">
         <input type="password" name="confirm" placeholder="Confirmar Contraseña" required>
