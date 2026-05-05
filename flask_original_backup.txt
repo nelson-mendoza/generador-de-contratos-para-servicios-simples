@@ -214,52 +214,18 @@ app = Flask(__name__)
 # Clave secreta generada automáticamente para mayor seguridad
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24).hex()) 
 
-# Configuración de seguridad para producción
-if os.environ.get('FLASK_ENV') == 'production':
-    # En producción, SECRET_KEY es obligatoria
-    if not os.environ.get('SECRET_KEY'):
-        raise ValueError("No SECRET_KEY set for production. Set FLASK_SECRET_KEY environment variable.")
-    app.secret_key = os.environ.get('SECRET_KEY')
-    
-# Configuración de upload segura
+UPLOAD_FOLDER = 'uploads'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024  # Límite de 2MB para uploads
 
 # Crear carpeta uploads al iniciar (fuera del main para funcionar con flask run)
 # Inicializar protección CSRF
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 csrf = CSRFProtect(app)
 
-# Headers de seguridad HTTP
-@app.after_request
-def add_security_headers(response):
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    return response
-
 def allowed_file(filename):
-    if '.' not in filename:
-        return False
-    ext = filename.rsplit('.', 1)[1].lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        return False
-    # Validación adicional de MIME type
-    return True
-
-def validate_file_mime(file):
-    """Valida el tipo MIME real del archivo subido"""
-    from werkzeug.utils import secure_filename
-    import imghdr
-    
-    file.seek(0)
-    file_data = file.read()
-    file.seek(0)
-    
-    # Verificar que sea una imagen válida
-    img_type = imghdr.what(None, file_data)
-    if img_type not in ['jpeg', 'png', 'gif']:
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # --- Rutas de Autenticación ---
 
@@ -382,23 +348,11 @@ def new_contract():
         if errors:
             # CORRECCIÓN: En vez de redirect (que borra datos), renderizamos con errores
             # Pasamos los datos del formulario (request.form) para rellenar los inputs
+            for err in errors:
+                flash(err, "error")
+            return render_template('form.html', form_data=request.form)
 
-        # Procesar logo con validación MIME mejorada
-        logo_filename = None
-        if 'provider_logo' in request.files:
-            file = request.files['provider_logo']
-            if file and file.filename != '' and allowed_file(file.filename):
-                if validate_file_mime(file):
-                    # Generar nombre único y seguro
-                    ext = file.filename.rsplit('.', 1)[1].lower()
-                    logo_filename = f"logo_{session['user_id']}_{int(time.time())}.{ext}"
-                    file.save(os.path.join(app.config['UPLOAD_FOLDER'], logo_filename))
-                else:
-                    flash("El archivo no es una imagen válida (PNG, JPG).", "error")
-                    return render_template('form.html', form_data=request.form)
-            elif file and file.filename != '':
-                flash("Solo se permiten archivos PNG o JPG.", "error")
-                return render_template('form.html', form_data=request.form)
+        # Guardar en DB
         conn = get_db()
         cursor = conn.cursor()
         try:
@@ -448,48 +402,6 @@ def new_contract():
         except Exception as e:
             conn.close()
             flash(f"Error al guardar: {str(e)}", "error")
-            return render_template('form.html', form_data=request.form)
-
-        # Validar datos de pago de forma más clara y segura
-        try:
-            total_amount = float(request.form.get('total_amount', 0))
-            if total_amount <= 0:
-                errors.append("El monto total debe ser mayor a 0")
-            
-            payment_structure = request.form.get('payment_structure')
-            payment_timing = request.form.get('payment_timing')
-            
-            advance_amount = 0.0
-            remaining_amount = 0.0
-            
-            if payment_structure == 'advance':
-                advance_amount = float(request.form.get('advance_amount', 0))
-                remaining_amount = float(request.form.get('remaining_amount', 0))
-                if abs((advance_amount + remaining_amount) - total_amount) > 0.01:
-                    errors.append("La suma del anticipo y resto no coincide con el total")
-            elif payment_structure == 'single':
-                advance_amount = total_amount
-                remaining_amount = 0.0
-            else:  # split o por defecto
-                remaining_amount = float(request.form.get('remaining_amount', total_amount))
-            
-            # Validar penalty_rate solo si aplica
-            penalty_rate = 0.0
-            if request.form.get('apply_penalty') and payment_timing == 'after':
-                try:
-                    penalty_rate = float(request.form.get('penalty_rate', 0))
-                    if penalty_rate < 0 or penalty_rate > 100:
-                        errors.append("La penalización debe estar entre 0 y 100%")
-                except ValueError:
-                    errors.append("Valor de penalización inválido")
-                    
-        except ValueError as e:
-            errors.append(f"Error en los montos: {str(e)}")
-        
-        # Si hay errores después de validación adicional
-        if errors:
-            for err in errors:
-                flash(err, "error")
             return render_template('form.html', form_data=request.form)
 
     return render_template('form.html', form_data=None)
@@ -806,15 +718,11 @@ cat > templates/form.html << 'EOF'
             <div id="penaltySection" class="{{ 'hidden' if form_data and form_data.payment_timing == 'before' else '' }}">
                 <label class="checkbox-label">
                     <input type="checkbox" name="apply_penalty" id="applyPenalty" {{ 'checked' if form_data and form_data.apply_penalty else '' }} onchange="togglePenaltyInput()"> Aplicar penalización por retraso
+                </label>
+                <input type="number" step="0.1" name="penalty_rate" id="penaltyRateInput" value="{{ form_data.penalty_rate if form_data else '5.0' }}" placeholder="% diario" {{ 'disabled' if form_data and not form_data.apply_penalty else '' }}>
+            </div>
+        </fieldset>
 
-        <!-- Campo oculto para apply_penalty (siempre existe en el form) -->
-        <input type="hidden" name="apply_penalty" value="0">
-        <div id="penaltySection" class="{{ 'hidden' if form_data and form_data.payment_timing == 'before' else '' }}">
-            <label class="checkbox-label">
-                <input type="checkbox" name="apply_penalty" id="applyPenalty" value="1" {{ 'checked' if form_data and form_data.get('apply_penalty') == '1' else '' }} onchange="togglePenaltyInput()"> Aplicar penalización por retraso
-            </label>
-            <input type="number" step="0.1" name="penalty_rate" id="penaltyRateInput" value="{{ form_data.penalty_rate if form_data and form_data.penalty_rate else '5.0' }}" placeholder="% diario" {{ 'disabled' if form_data and not form_data.get('apply_penalty') == '1' else '' }}>
-        </div>
         <!-- BOTÓN DESPLEGABLE AVANZADO -->
         <button type="button" class="btn-toggle" onclick="toggleAdvanced()"> Opciones Avanzadas (RFC, Firmas...)</button>
         
@@ -870,17 +778,10 @@ cat > templates/pdf_view.html << 'EOF'
         </div>
         <div class="header-center">
             <h1>CONTRATO DE PRESTACIÓN DE SERVICIOS PROFESIONALES</h1>
-
-        <div class="header-center">
-            <h1>CONTRATO DE PRESTACIÓN DE SERVICIOS PROFESIONALES</h1>
-            {% if contract.deadline %}
-                {% if contract.deadline is string %}
-                    <p>En {{ contract.city_location }}, a {{ contract.deadline[:10] }}.</p>
-                {% else %}
-                    <p>En {{ contract.city_location }}, a {{ contract.deadline.strftime('%Y-%m-%d') }}.</p>
-                {% endif %}
-            {% endif %}
+            <p>En {{ contract.city_location }}, a {{ contract.deadline[:10] if contract.deadline else '' }}.</p>
         </div>
+        <div class="header-right">
+            <strong>{{ contract.provider_name }}</strong><br>
             Tel: {{ contract.provider_phone }}<br>
             {% if contract.rfc_provider %}RFC: {{ contract.rfc_provider }}{% endif %}
         </div>
@@ -951,13 +852,13 @@ cat > templates/pdf_view.html << 'EOF'
     </div>
     {% endif %}
 
-
-    {% if contract.payment_timing == 'after' and contract.penalty_rate %}
+    {% if contract.payment_timing == 'after' %}
     <div class="pdf-section">
         <h3>SÉPTIMA. INCUMPLIMIENTO</h3>
-        <p>El retraso en el pago generará una penalización del {{ "%.1f"|format(contract.penalty_rate) }}% diario sobre el monto pendiente. Si no se paga en la fecha límite, el contrato podrá cancelarse.</p>
+        <p>El retraso en el pago generará una penalización del {{ contract.penalty_rate }}% diario. Si no se paga en fecha límite, el contrato se cancela.</p>
     </div>
     {% endif %}
+
     <!-- PIE DE PÁGINA (FIRMAS) -->
     {% if contract.include_signatures %}
     <div class="signatures-section">
@@ -1266,67 +1167,6 @@ function previewLogo(input) {
     if (input.files && input.files[0]) {
         const reader = new FileReader();
         reader.onload = function(e) {
-            preview.src = e.target.result;
-
-// Función mejorada para mostrar/ocultar input de penalización
-function togglePenaltyInput() {
-    const checkbox = document.getElementById('applyPenalty');
-    const input = document.getElementById('penaltyRateInput');
-    const section = document.getElementById('penaltySection');
-    
-    if (checkbox.checked) {
-        input.disabled = false;
-        input.required = true;
-        section.classList.remove('hidden');
-    } else {
-        input.disabled = true;
-        input.required = false;
-        input.value = ''; // Limpiar valor si se desmarca
-    }
-}
-
-// Mostrar sección de penalización solo si es "después"
-function updatePaymentTiming() {
-    const timing = document.querySelector('input[name="payment_timing"]:checked');
-    const section = document.getElementById('penaltySection');
-    const checkbox = document.getElementById('applyPenalty');
-    
-    if (timing && timing.value === 'before') {
-        section.classList.add('hidden');
-        checkbox.checked = false;
-        togglePenaltyInput();
-    } else {
-        section.classList.remove('hidden');
-    }
-}
-
-// Validación del formulario (lado cliente - UX, no seguridad)
-document.getElementById('contractForm').addEventListener('submit', function(e) {
-    const total = parseFloat(document.getElementById('totalAmount').value);
-    if (isNaN(total) || total <= 0) {
-        e.preventDefault();
-        alert("El monto total debe ser mayor a 0.");
-        return false;
-    }
-
-    const customInput = document.getElementById('customServiceInput');
-    if (!customInput.classList.contains('hidden')) {
-        if(!customInput.value || !customInput.value.trim()) {
-            e.preventDefault();
-            alert("Especifica el tipo de servicio personalizado.");
-            return false;
-        }
-    }
-    
-    // Validar que penalty_rate tenga valor si apply_penalty está marcado
-    const checkbox = document.getElementById('applyPenalty');
-    const penaltyInput = document.getElementById('penaltyRateInput');
-    if (checkbox.checked && (!penaltyInput.value || parseFloat(penaltyInput.value) <= 0)) {
-        e.preventDefault();
-        alert("Ingrese un valor de penalización válido (> 0).");
-        return false;
-    }
-});
             preview.src = e.target.result;
             preview.classList.remove('hidden');
         }
