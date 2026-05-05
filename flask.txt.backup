@@ -111,14 +111,6 @@ def validate_contract(data):
         
     if len(data.get('service_desc', '')) < 5:
         errors.append("Descripción muy corta.")
-
-    # Validación de email más robusta
-    import re
-    email = data.get('email_client', '')
-    if email:
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_pattern, email):
-            errors.append("Email del cliente inválido.")
         
     # Validación numérica segura (Try/Except para evitar crash 500)
     try:
@@ -284,40 +276,16 @@ def logout():
 
 @app.route('/delete_account', methods=['POST'])
 def delete_account():
-    """Borra cuenta, contratos y archivos de logo (Cascada manual por seguridad)."""
+    """Borra cuenta y contratos (Cascada manual por seguridad)."""
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
-    # Validar token CSRF explícitamente
-    from flask_wtf.csrf import validate_csrf
-    from wtforms.validators import ValidationError
-    try:
-        validate_csrf(request.form.get('csrf_token'))
-    except ValidationError:
-        flash("Error de validación CSRF.", "danger")
-        return redirect(url_for('index'))
-    
     conn = get_db()
     cursor = conn.cursor()
-    
-    # Obtener logos asociados al usuario antes de borrar
-    cursor.execute("SELECT logo_filename FROM contracts WHERE user_id = ? AND logo_filename IS NOT NULL", (session['user_id'],))
-    logos = [row[0] for row in cursor.fetchall()]
-    
-    # Borrar contratos y usuario
     cursor.execute("DELETE FROM contracts WHERE user_id = ?", (session['user_id'],))
     cursor.execute("DELETE FROM users WHERE id = ?", (session['user_id'],))
     conn.commit()
     conn.close()
-    
-    # Eliminar archivos de logo del filesystem
-    import os
-    for logo in logos:
-        try:
-            os.remove(os.path.join('uploads', logo))
-        except OSError:
-            pass  # Si el archivo no existe, continuar
-    
     session.clear()
     flash("Cuenta eliminada.", "warning")
     return redirect(url_for('register'))
@@ -618,15 +586,14 @@ cat > templates/form.html << 'EOF'
                 <option value="Otros" {{ 'selected' if form_data and form_data.service_type == 'Otros' else '' }}>Otro...</option>
             </select>
             
-            <!-- Input personalizado para "Otros" (se usa el mismo name, JS lo activa/desactiva) -->
-            <label id="customServiceLabel" class="{{ 'hidden' if not form_data or form_data.service_type != 'Otros' else '' }}">Especifique el servicio personalizado</label>
-            <input type="text" name="service_title" id="customServiceInput" 
-                   value="{{ form_data.service_title if form_data else '' }}" 
+            <!-- Input personalizado para "Otros" -->
+            <input type="text" name="service_title_custom" id="customServiceInput" 
+                   value="{{ form_data.service_title if form_data and form_data.service_type == 'Otros' else '' }}" 
                    class="{{ 'hidden' if not form_data or form_data.service_type != 'Otros' else '' }}" 
-                   placeholder="Ej: Instalación de aire acondicionado">
+                   placeholder="Especifique el servicio personalizado">
             
-            <label id="standardServiceLabel">Título Corto del Servicio</label>
-            <input type="text" name="service_title_std" id="standardServiceTitle" value="{{ form_data.service_title if form_data and form_data.service_type != 'Otros' else '' }}" placeholder="Ej: Mantenimiento PC">
+            <label>Título Corto del Servicio</label>
+            <input type="text" name="service_title" value="{{ form_data.service_title if form_data and form_data.service_type != 'Otros' else '' }}" placeholder="Ej: Mantenimiento PC" required>
 
             <label>Descripción Detallada</label>
             <textarea name="service_desc" rows="3" placeholder="Describe exactamente qué harás..." required>{{ form_data.service_desc if form_data else '' }}</textarea>
@@ -1021,33 +988,15 @@ cat > static/script.js << 'EOF'
 
 function toggleOtherService() {
     const type = document.getElementById('serviceType').value;
-    const customInput = document.getElementById('customServiceInput');
-    const standardInput = document.getElementById('standardServiceTitle');
-    const customLabel = document.getElementById('customServiceLabel');
-    const standardLabel = document.getElementById('standardServiceLabel');
-    
+    const input = document.getElementById('customServiceInput');
     if (type === 'Otros') {
-        // Mostrar input personalizado, ocultar estándar
-        customInput.classList.remove('hidden');
-        customLabel.classList.remove('hidden');
-        customInput.setAttribute('required', 'true');
-        customInput.name = "service_title";
-        
-        // Desactivar el input estándar para que no se envíe
-        standardInput.removeAttribute('name');
-        standardInput.removeAttribute('required');
-        standardLabel.classList.add('hidden');
+        input.classList.remove('hidden');
+        input.setAttribute('required', 'true');
+        input.name = "service_title"; 
     } else {
-        // Mostrar input estándar, ocultar personalizado
-        customInput.classList.add('hidden');
-        customLabel.classList.add('hidden');
-        customInput.removeAttribute('required');
-        customInput.removeAttribute('name');
-        
-        // Activar el input estándar
-        standardInput.name = "service_title";
-        standardInput.setAttribute('required', 'true');
-        standardLabel.classList.remove('hidden');
+        input.classList.add('hidden');
+        input.removeAttribute('required');
+        input.name = ""; 
     }
 }
 
