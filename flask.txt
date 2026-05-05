@@ -451,10 +451,10 @@ cat > templates/base.html << 'EOF'
         <h2> ContratoExpress</h2>
         <nav>
             <a href="{{ url_for('index') }}"> Inicio</a>
-            <a href="{{ url_for('new_contract') }}">✍️ Nuevo Contrato</a>
-            <a href="{{ url_for('history') }}">📂 Historial</a>
+            <a href="{{ url_for('new_contract') }}"> Nuevo Contrato</a>
+            <a href="{{ url_for('history') }}">Historial</a>
             <hr>
-            <a href="{{ url_for('logout') }}" class="logout">🚪 Cerrar Sesión</a>
+            <a href="{{ url_for('logout') }}" class="logout"> Cerrar Sesión</a>
             <form action="{{ url_for('delete_account') }}" method="POST" onsubmit="return confirm('¿Seguro? Se borrará todo.');">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="danger-btn"> Eliminar Cuenta</button>
@@ -523,11 +523,11 @@ cat > templates/dashboard.html << 'EOF'
 {% extends "base.html" %}
 {% block content %}
 <div class="simple-welcome">
-    <h1>¡Hola, {{ session.username }}! 👋</h1>
+    <h1>¡Hola, {{ session.username }}!</h1>
     <p>Bienvenido a <strong>ContratoExpress</strong>.</p>
     <div class="quick-links">
-        <a href="{{ url_for('new_contract') }}" class="quick-link">✍️ Crear Nuevo Contrato</a>
-        <a href="{{ url_for('history') }}" class="quick-link">📂 Ver Historial</a>
+        <a href="{{ url_for('new_contract') }}" class="quick-link"> Crear Nuevo Contrato</a>
+        <a href="{{ url_for('history') }}" class="quick-link">Ver Historial</a>
     </div>
 </div>
 {% endblock %}
@@ -836,7 +836,7 @@ EOF
 cat > templates/history.html << 'EOF'
 {% extends "base.html" %}
 {% block content %}
-<h1>📂 Historial de Contratos</h1>
+<h1>Historial de Contratos</h1>
 {% if contracts %}
     <div class="contracts-list">
         {% for c in contracts %}
