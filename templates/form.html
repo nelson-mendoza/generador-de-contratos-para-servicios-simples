@@ -60,18 +60,19 @@
             <textarea name="service_desc" rows="3" placeholder="Describe exactamente qué harás..." required>{{ form_data.service_desc if form_data else '' }}</textarea>
 
             <div class="checkbox-group">
-                <label class="switch-label">
-                    <input type="checkbox" name="has_materials" id="hasMaterials" onchange="toggleMaterials()" {{ 'checked' if form_data and form_data.has_materials else '' }}>
-                    ¿Incluye Materiales?
-                </label>
+                <div class="form-row-inline">
+                    <label class="checkbox-label-inline">
+                        <input type="checkbox" name="has_materials" id="hasMaterials" onchange="toggleMaterials()" {{ 'checked' if form_data and form_data.has_materials else '' }}>
+                        ¿Incluye Materiales?
+                    </label>
+                    <label class="checkbox-label-inline">
+                        <input type="checkbox" name="is_quote_pending" {{ 'checked' if form_data and form_data.is_quote_pending else '' }}> Cotización Pendiente
+                    </label>
+                </div>
                 <div id="materialsOptions" class="{{ 'hidden' if not form_data or not form_data.has_materials else '' }}">
                     <textarea name="materials_details" placeholder="Lista de materiales incluidos...">{{ form_data.materials_details if form_data else '' }}</textarea>
                 </div>
             </div>
-
-            <label class="checkbox-label" style="margin-top: 10px; display: block;">
-                <input type="checkbox" name="is_quote_pending" {{ 'checked' if form_data and form_data.is_quote_pending else '' }}> Cotización Pendiente
-            </label>
         </fieldset>
 
         <!-- SECCIÓN 3: PAGOS -->
