@@ -211,22 +211,12 @@ import os
 import time # Para nombres únicos de archivos
 
 app = Flask(__name__)
-# Clave secreta generada automáticamente para mayor seguridad
-app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24).hex()) 
-
-# Configuración de seguridad para producción
-if os.environ.get('FLASK_ENV') == 'production':
-    # En producción, SECRET_KEY es obligatoria
-    if not os.environ.get('SECRET_KEY'):
-        raise ValueError("No SECRET_KEY set for production. Set FLASK_SECRET_KEY environment variable.")
+# Clave secreta: usa variable de entorno en producción, genera una temporal en desarrollo
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24).hex())
 
 # Configuración segura
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-
-if not os.environ.get('SECRET_KEY'):
-    raise ValueError("No SECRET_KEY set for production. Set FLASK_SECRET_KEY environment variable.")
-app.secret_key = os.environ.get('SECRET_KEY')
 
 # Configuración de upload segura
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
