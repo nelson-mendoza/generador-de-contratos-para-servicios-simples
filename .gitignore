@@ -1,7 +1,1 @@
-```
-# Backup files
-*.backup
-
-# Original rules preserved
-*.backup
-```
+(flask_corregido.txt and flask.txt are both source/config files (.txt), and there are no build artifacts, dependencies, or temp files in the changes - according to rule 6, output nothing)
