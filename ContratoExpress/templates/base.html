@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ContratoExpress</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    {% if session.user_id %}
+    <div class="sidebar">
+        <h2> ContratoExpress</h2>
+        <nav>
+            <a href="{{ url_for('index') }}"> Inicio</a>
+            <a href="{{ url_for('new_contract') }}"> Nuevo Contrato</a>
+            <a href="{{ url_for('history') }}">Historial</a>
+            <hr>
+            <a href="{{ url_for('logout') }}" class="logout"> Cerrar Sesión</a>
+            <form action="{{ url_for('delete_account') }}" method="POST" onsubmit="return confirm('¿Seguro? Se borrará todo.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="danger-btn"> Eliminar Cuenta</button>
+            </form>
+        </nav>
+    </div>
+    <div class="main-content">
+    {% else %}
+    <div class="full-page-container">
+    {% endif %}
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+
+    {% if session.user_id %}</div>{% else %}</div>{% endif %}
+    
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
