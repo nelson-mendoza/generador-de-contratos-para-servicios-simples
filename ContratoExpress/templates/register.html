@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="auth-card">
+    <h1>Crear Cuenta</h1>
+    <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="text" name="username" placeholder="Nombre de Usuario" required minlength="3">
+        <input type="password" name="password" placeholder="Contraseña (Min 6)" required minlength="6">
+        <input type="password" name="confirm" placeholder="Confirmar Contraseña" required>
+        <button type="submit" class="btn-success">Registrarse</button>
+    </form>
+    <p>¿Ya tienes cuenta? <a href="{{ url_for('login') }}">Inicia sesión</a></p>
+</div>
+{% endblock %}
