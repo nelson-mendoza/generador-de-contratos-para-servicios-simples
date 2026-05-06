@@ -271,15 +271,18 @@ def index():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        confirm = request.form.get('confirm')
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        confirm = request.form.get('confirm', '')
+        
+        # Normalizar: convertir a minúsculas y reemplazar múltiples espacios con uno solo
+        username = ' '.join(username.lower().split())
         
         if not username or len(username) < 3:
-            flash("Usuario muy corto.", "error")
+            flash("Usuario muy corto (mínimo 3 caracteres).", "error")
             return redirect(url_for('register'))
         if not password or len(password) < 6:
-            flash("Contraseña débil (min 6).", "error")
+            flash("Contraseña débil (mínimo 6 caracteres).", "error")
             return redirect(url_for('register'))
         if password != confirm:
             flash("Las contraseñas no coinciden.", "error")
@@ -297,8 +300,11 @@ def register():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        
+        # Normalizar igual que en registro: minúsculas y espacios únicos
+        username = ' '.join(username.lower().split())
         
         user_id = login_user(username, password)
         if user_id:
@@ -321,15 +327,6 @@ def delete_account():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
-    # Validar token CSRF explícitamente
-    from flask_wtf.csrf import validate_csrf
-    from wtforms.validators import ValidationError
-    try:
-        validate_csrf(request.form.get('csrf_token'))
-    except ValidationError:
-        flash("Error de validación CSRF.", "danger")
-        return redirect(url_for('index'))
-    
     conn = get_db()
     cursor = conn.cursor()
     
@@ -347,7 +344,7 @@ def delete_account():
     import os
     for logo in logos:
         try:
-            os.remove(os.path.join('uploads', logo))
+            os.remove(os.path.join(app.config['UPLOAD_FOLDER'], logo))
         except OSError:
             pass  # Si el archivo no existe, continuar
     
@@ -493,6 +490,12 @@ def history():
     conn.close()
     return render_template('history.html', contracts=contracts)
 
+@app.route('/help')
+def help():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    return render_template('help.html')
+
 @app.route('/view/<int:contract_id>')
 def view_contract(contract_id):
     if 'user_id' not in session:
@@ -559,22 +562,23 @@ cat > templates/base.html << 'EOF'
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ContratoExpress</title>
+    <title>⚖️ Magno - Contratos para Servicios Simples</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
 </head>
 <body>
     {% if session.user_id %}
     <div class="sidebar">
-        <h2> ContratoExpress</h2>
+        <h2>⚖️ Magno - Servicios Simples</h2>
         <nav>
             <a href="{{ url_for('index') }}"> Inicio</a>
             <a href="{{ url_for('new_contract') }}"> Nuevo Contrato</a>
             <a href="{{ url_for('history') }}">Historial</a>
+            <a href="{{ url_for('help') }}">❓ Ayuda</a>
             <hr>
             <a href="{{ url_for('logout') }}" class="logout"> Cerrar Sesión</a>
-            <form action="{{ url_for('delete_account') }}" method="POST" onsubmit="return confirm('¿Seguro? Se borrará todo.');">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <form action="{{ url_for('delete_account') }}" method="POST" onsubmit="return confirm('¿Seguro? Esta acción no se puede deshacer.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                 <button type="submit" class="danger-btn"> Eliminar Cuenta</button>
             </form>
         </nav>
@@ -644,10 +648,11 @@ cat > templates/dashboard.html << 'EOF'
 {% block content %}
 <div class="simple-welcome">
     <h1>¡Hola, {{ session.username }}!</h1>
-    <p>Bienvenido a <strong>ContratoExpress</strong>.</p>
+    <p>Bienvenido a <strong>Magno</strong>, tu plataforma de contratos para servicios simples.</p>
     <div class="quick-links">
         <a href="{{ url_for('new_contract') }}" class="quick-link"> Crear Nuevo Contrato</a>
         <a href="{{ url_for('history') }}" class="quick-link">Ver Historial</a>
+        <a href="{{ url_for('help') }}" class="quick-link">❓ Ayuda</a>
     </div>
 </div>
 {% endblock %}
@@ -850,10 +855,12 @@ cat > templates/pdf_view.html << 'EOF'
                 <img src="{{ url_for('uploaded_file', filename=contract.provider_logo) }}" class="company-logo">
             {% endif %}
         </div>
-        <div class="header-center">
-            <h1>CONTRATO DE PRESTACIÓN DE SERVICIOS PROFESIONALES</h1>
-
-        <div class="header-center">
+        <div class="header-right">
+            <strong>{{ contract.provider_name }}</strong><br>
+            Tel: {{ contract.provider_phone }}<br>
+            {% if contract.rfc_provider %}RFC: {{ contract.rfc_provider }}{% endif %}
+        </div>
+        <div class="header-center-title">
             <h1>CONTRATO DE PRESTACIÓN DE SERVICIOS PROFESIONALES</h1>
             {% if contract.deadline %}
                 {% if contract.deadline is string %}
@@ -862,9 +869,6 @@ cat > templates/pdf_view.html << 'EOF'
                     <p>En {{ contract.city_location }}, a {{ contract.deadline.strftime('%Y-%m-%d') }}.</p>
                 {% endif %}
             {% endif %}
-        </div>
-            Tel: {{ contract.provider_phone }}<br>
-            {% if contract.rfc_provider %}RFC: {{ contract.rfc_provider }}{% endif %}
         </div>
     </div>
 
@@ -995,6 +999,63 @@ cat > templates/history.html << 'EOF'
 {% endblock %}
 EOF
 
+# Página de Ayuda
+cat > templates/help.html << 'EOF'
+{% extends "base.html" %}
+{% block content %}
+<div class="help-container">
+    <h1>❓ Ayuda - Cómo usar Magno</h1>
+    <p class="help-intro">Magno es tu plataforma para crear contratos profesionales de servicios simples. Sigue estos pasos:</p>
+    
+    <div class="help-section">
+        <h2>📝 Paso 1: Registro</h2>
+        <ul>
+            <li>Crea una cuenta con un nombre de usuario (mínimo 3 caracteres) y contraseña (mínimo 6 caracteres).</li>
+            <li>Los espacios en el nombre se eliminan automáticamente para evitar errores al iniciar sesión.</li>
+        </ul>
+    </div>
+    
+    <div class="help-section">
+        <h2>📄 Paso 2: Crear Contrato</h2>
+        <ul>
+            <li>Haz clic en "Nuevo Contrato".</li>
+            <li><strong>Datos del Prestador:</strong> Tu nombre, teléfono, ciudad donde se firma el contrato, y opcionalmente tu logo.</li>
+            <li><strong>Datos del Cliente:</strong> Nombre y teléfono de quien contrata el servicio.</li>
+            <li><strong>Servicio:</strong> Elige un tipo predefinido o escribe "Otros" para personalizar. Describe brevemente el trabajo.</li>
+            <li><strong>Materiales:</strong> Indica si los incluyes o si los proporciona el cliente.</li>
+            <li><strong>Pago:</strong> Define el monto total, si hay anticipo, y el método (efectivo, transferencia, crypto, etc.).</li>
+            <li><strong>Fecha límite:</strong> Cuándo debe entregarse el servicio.</li>
+            <li><strong>Opciones extra:</strong> Confidencialidad, cláusula de penalización por retraso, y firmas.</li>
+        </ul>
+    </div>
+    
+    <div class="help-section">
+        <h2>👁️ Paso 3: Ver y Descargar</h2>
+        <ul>
+            <li>Una vez creado, ve a "Historial" y haz clic en "Ver PDF".</li>
+            <li>El contrato se mostrará con formato profesional A4.</li>
+            <li>Para guardar: Presiona Ctrl+P (o Cmd+P en Mac) y selecciona "Guardar como PDF".</li>
+        </ul>
+    </div>
+    
+    <div class="help-section">
+        <h2>⚠️ Importante</h2>
+        <ul>
+            <li>Este generador está diseñado para <strong>servicios simples</strong> (reparaciones, consultorías, trabajos freelance, etc.).</li>
+            <li>Para contratos complejos o de alto valor, consulta a un abogado.</li>
+            <li>La eliminación de cuenta es permanente y borra todos tus contratos y logos.</li>
+        </ul>
+    </div>
+    
+    <div class="help-tip">
+        <p>💡 <strong>Consejo:</strong> Revisa siempre los datos antes de generar el contrato. Una vez descargado el PDF, es tu responsabilidad guardarlo.</p>
+    </div>
+    
+    <a href="{{ url_for('new_contract') }}" class="btn-primary" style="margin-top: 20px; display: inline-block;">Crear Mi Primer Contrato</a>
+</div>
+{% endblock %}
+EOF
+
 # 6. Estilos CSS (Con mejoras de impresión)
 cat > static/style.css << 'EOF'
 :root {
@@ -1074,9 +1135,11 @@ input:focus, textarea:focus { border-color: var(--primary); outline: none; }
 .hint { font-size: 0.8rem; opacity: 0.8; width: 100%; margin-top: 5px; }
 
 .a4-page { background: white; width: 210mm; min-height: 297mm; padding: 25mm; margin: 0 auto; box-shadow: 0 0 15px rgba(0,0,0,0.1); font-family: 'Times New Roman', serif; line-height: 1.6; color: #000; }
-.pdf-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 30px; }
-.header-center { text-align: center; flex: 1; }
-.header-center h1 { font-size: 18pt; text-transform: uppercase; margin-bottom: 5px; }
+.pdf-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 30px; gap: 20px; }
+.header-left { flex: 0 0 150px; text-align: left; }
+.header-right { flex: 0 0 200px; text-align: right; font-size: 10pt; }
+.header-center-title { flex: 1; text-align: center; }
+.header-center-title h1 { font-size: 16pt; text-transform: uppercase; margin-bottom: 10px; font-weight: bold; }
 .company-logo { max-height: 80px; max-width: 150px; object-fit: contain; }
 .pdf-section { margin-bottom: 20px; text-align: justify; }
 .pdf-section h3 { font-size: 12pt; text-transform: uppercase; border-bottom: 1px solid #ccc; margin-bottom: 10px; }
@@ -1084,6 +1147,16 @@ input:focus, textarea:focus { border-color: var(--primary); outline: none; }
 .signatures-section { display: flex; justify-content: space-around; margin-top: 60px; page-break-inside: avoid; }
 .sig-box { text-align: center; width: 30%; }
 .sig-line { border-top: 1px solid #000; height: 40px; margin-bottom: 10px; }
+
+/* Ayuda */
+.help-container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+.help-container h1 { color: var(--dark); margin-bottom: 20px; }
+.help-intro { font-size: 1.1rem; margin-bottom: 25px; color: #555; }
+.help-section { margin-bottom: 25px; }
+.help-section h2 { color: var(--primary); font-size: 1.2rem; margin-bottom: 10px; border-bottom: 2px solid var(--success); padding-bottom: 5px; display: inline-block; }
+.help-section ul { margin-left: 20px; }
+.help-section li { margin-bottom: 8px; line-height: 1.5; }
+.help-tip { background: #e7f5ff; border-left: 4px solid var(--primary); padding: 15px; margin-top: 25px; border-radius: 0 6px 6px 0; }
 
 .hidden { display: none !important; }
 
